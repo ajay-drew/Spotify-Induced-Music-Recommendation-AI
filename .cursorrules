@@ -1,0 +1,150 @@
+Request: Initial SIMRAI planning. User asked to avoid code for now, and instead create a text file describing how the project should be built, the final goal, and a step-by-step breakdown.
+Execution: Created SIMRAI_design_plan.txt containing a detailed design document with final vision, architecture, CLI behavior, roadmap phases, success metrics, and open questions.
+Changes: Added SIMRAI_design_plan.txt and this .cursorrules log entry to the repository.
+
+
+Request: Capture high-level design decisions for LLM choice, history behavior, Spotify opening, and Android experience (still no code).
+Execution: Updated SIMRAI_design_plan.txt to add a “7.6. Resolved Design Choices (v0.1)” section reflecting: OSS/free LLMs by default; on-demand-only mood history; `simrai open` actively attempting to open Spotify with safe fallbacks; and a basic Termux guide with Android-only speech-to-text for mood input.
+Changes: Modified SIMRAI_design_plan.txt to record these decisions and appended this explanation to .cursorrules.
+
+
+Request: Adjust SIMRAI design to be a simple, end-to-end, resume-worthy project that can realistically be built within two days, while leaving room for future real-time/multi-user usage.
+Execution: Extended SIMRAI_design_plan.txt with sections “9. 48-HOUR MVP: RESUME-READY, END-TO-END SCOPE” and “10. FUTURE “REAL-TIME / MULTI-USER” EXTENSIONS”, defining a focused 48-hour MVP feature set, explicit must/should/defer lists, and outlining post-MVP multi-user and real-time demo ideas.
+Changes: Updated SIMRAI_design_plan.txt with MVP scope and future extension plans, and logged this design-scope decision here.
+
+
+Request: Start building SIMRAI from scratch in Python, choose the main CLI framework, prepare for using MCP for Spotify, and begin with Phase 0 (planning & scaffolding).
+Execution: Chose Python 3.10+ with Typer for the CLI, httpx for HTTP, a pluggable OSS-first LLM abstraction, and PyInstaller for packaging; added pyproject.toml and requirements.txt; scaffolded the Python package under src/simrai with __init__.py, a minimal Typer-based cli.py entrypoint, and config.py for env/.env-based Spotify+MCP configuration; and updated SIMRAI_design_plan.txt Phase 0 with the concrete tech stack. No functional Spotify or AI logic implemented yet.
+Changes: Added pyproject.toml, requirements.txt, src/simrai/__init__.py, src/simrai/cli.py, src/simrai/config.py; updated SIMRAI_design_plan.txt and documented this step here in .cursorrules.
+
+
+Request: Clarify that MCP-based Spotify access should only retrieve metadata and audio features.
+Execution: Updated the Spotify Integration Layer and Phase 1 roadmap in SIMRAI_design_plan.txt to specify that both direct Web API and MCP backends are strictly limited to read-only metadata and audio features (no playback or playlist/user-library modifications), with MCP treated as an optional backend exposing those capabilities.
+Changes: Modified SIMRAI_design_plan.txt to describe the dual backend (direct + MCP) and the read-only scope, and logged this clarification here.
+
+
+Request: Start with Spotify integration Phase 1, wiring read-only access to metadata and audio features (with MCP in mind).
+Execution: Expanded config to support MCP preference flags; implemented src/simrai/spotify.py with a DirectSpotifyClient (Client Credentials auth, search, audio-features with in-memory caching), a placeholder McpSpotifyClient, and a SpotifyService abstraction; and temporarily wired the main CLI callback to exercise Phase 1 by performing a simple track search for the provided mood. No playlist, playback, or user-library operations were added.
+Changes: Updated src/simrai/config.py, added src/simrai/spotify.py, updated src/simrai/cli.py, and documented this integration step and its read-only scope here.
+
+
+Request: Move to the next steps now that the `simrai` CLI runs, implementing a minimal mood-to-queue pipeline and better CLI output.
+Execution: Implemented a rule-based Mood Alchemist v0 in src/simrai/mood.py, a minimal end-to-end pipeline in src/simrai/pipeline.py that uses SpotifyService to fetch candidates and score them by valence/energy, and updated src/simrai/cli.py to accept flags (--length/--intense/--soft), run the pipeline, and render a Rich table plus a one-line summary.
+Changes: Added src/simrai/mood.py, src/simrai/pipeline.py, updated src/simrai/cli.py to use them, and verified there are no new linter errors; logged this Phase 2 milestone here.
+
+Request: Ask what needs to go into the .env file and where to obtain those values.
+Execution: Explained the required environment variables for SIMRAI (.env in project root with SIMRAI_SPOTIFY_CLIENT_ID, SIMRAI_SPOTIFY_CLIENT_SECRET, and optional MCP-related vars) and provided concise steps to create a Spotify Developer app to get the client ID and secret.
+Changes: No code changes; only documentation-style guidance in conversation and this .cursorrules log entry.
+
+Request: Help running `python -m simrai` after seeing `No module named simrai`.
+Execution: Clarified that the package needs to be installed (or on PYTHONPATH) for `python -m simrai` to work, and instructed the user to activate their venv, run `pip install -e .` from the project root, then rerun `python -m simrai "..."` (or alternatively set `PYTHONPATH=src` and use `python -m simrai`).
+Changes: No repository code changes; only run/usage guidance recorded here.
+
+
+Request: Diagnose why SIMRAI_SPOTIFY_CLIENT_ID in .env is not visible in the CLI.
+Execution: Explained the difference between shell environment variables and values loaded from .env, and guided the user to ensure the .env file is in the project root, correctly named, and that commands are run from that directory; also suggested a quick python-dotenv test snippet to confirm loading.
+Changes: No repository changes; only troubleshooting guidance documented here.
+
+Request: Provide and save a small script to test Spotify Web API access.
+Execution: Wrote test_spotify_api.py, a standalone script that loads .env, requests a client-credentials token, and performs a simple /v1/search call, printing status codes and truncated bodies to help debug 403 issues.
+Changes: Added test_spotify_api.py to the project and documented this debugging helper here.
+
+Request: Interpret results of test_spotify_api.py and advise next steps for SIMRAI CLI 403 issues.
+Execution: Confirmed that both token and search endpoints return HTTP 200 with valid data, proving the Spotify app and credentials are working; advised re-running the SIMRAI CLI and, if errors persist, to narrow down whether failures come from search or audio-features calls and adjust debugging/logging accordingly.
+Changes: No repository changes; only guidance based on the test script output and this .cursorrules log entry.
+
+Request: Handle Spotify 403 errors on /audio-features inside SIMRAI so the CLI still returns a queue.
+Execution: Updated the Spotify client to include the failing path in error messages, and modified the pipeline so that if the audio-features endpoint fails (e.g., 403), it falls back to using top search results without psychoacoustic scoring, returning a queue with neutral valence/energy and a summary explaining the fallback.
+Changes: Updated src/simrai/spotify.py to enrich error messages and src/simrai/pipeline.py to catch SpotifyAPIError from get_audio_features and build a search-based queue instead of exiting with an error; logged this robustness improvement here.
+
+
+Request: Start scaffolding the four SIMRAI agents using a LangChain-compatible framework and CrewAI for orchestration.
+Execution: Added CrewAI and langchain-core as dependencies, created src/simrai/agents.py defining the four conceptual agents and a Crew plus a placeholder run_with_agents function that currently delegates to the existing rule-based pipeline, and updated SIMRAI_design_plan.txt to note CrewAI-based orchestration while keeping OSS/local-first LLMs in mind.
+Changes: Updated requirements.txt and pyproject.toml to include crewai and langchain-core, added src/simrai/agents.py with agent scaffolding, and amended SIMRAI_design_plan.txt; documented this agent-architecture step here.
+
+
+Request: Reconcile Spotify’s new Web API restrictions (blocked audio-features, recommendations, etc.) with SIMRAI’s goals, and ask about adding Spotify MCP now.
+Execution: Explained that Spotify’s server-side policy blocks those endpoints for new apps regardless of client (including MCP), so SIMRAI must treat audio features as unavailable unless an external MCP server with extended access is used; outlined that we can lean harder on AI for mood/set design and metadata-based planning, and that wiring a concrete MCP backend requires details about which Spotify MCP server and interface the user plans to run.
+Changes: No code changes; clarified design and constraints here in .cursorrules and in conversation.
+
+
+Request: Decide to rely on standard Spotify metadata (search, popularity, release year, etc.) and let AI heavily use that instead of audio features for recommendations.
+Execution: Confirmed that SIMRAI will use the normal Spotify Web API endpoints that remain available (search and metadata), and updated SIMRAI_design_plan.txt’s Spotify Integration Layer description to emphasize metadata fields like popularity and release year, while treating audio features as optional/“where available”.
+Changes: Adjusted SIMRAI_design_plan.txt to highlight metadata-driven recommendations and logged this design refinement in .cursorrules.
+
+
+Request: Start with this metadata-first approach and implement the needed AI agent pipeline, testing as we go.
+Execution: Extended MoodInterpretation in src/simrai/mood.py to infer metadata preferences (popular/obscure, recent/classics) from the mood text, and updated src/simrai/pipeline.py so that when audio features are unavailable it ranks candidates using Spotify metadata (popularity and release year) guided by those preferences, instead of plain search order; verified lints remain clean.
+Changes: Modified src/simrai/mood.py to add preference flags and src/simrai/pipeline.py to perform metadata-driven fallback ranking; recorded this pipeline refinement here.
+
+Request: Ensure valence and energy scores are not all 0.50 when audio features are unavailable, deriving per-track values from metadata.
+Execution: Added a _metadata_valence_energy helper in src/simrai/pipeline.py that estimates synthetic valence and energy for each track using popularity, release year, the mood vector, and metadata-based preferences (popular/obscure, recent/classics); updated the metadata-only fallback to use these per-track values so the Rich table shows varied valence/energy instead of flat 0.50.
+Changes: Updated src/simrai/pipeline.py to compute per-track valence/energy from metadata in the audio-features-unavailable path and logged this refinement here.
+
+
+Request: Increase variation in synthetic energy values and use track/album text metadata to shape them.
+Execution: Strengthened the metadata-based valence/energy heuristic in src/simrai/pipeline.py by increasing the influence of popularity and release year on energy, and added text-based adjustments from track and album names (e.g., “remix”, “club”, “acoustic”, “piano”) so that different tracks get more clearly distinct synthetic valence/energy scores when audio features are unavailable.
+Changes: Updated _metadata_valence_energy to incorporate track/album name heuristics and larger metadata-driven adjustments, then verified the pipeline still passes lint checks; recorded this tuning step here.
+
+
+Request: Explore how to build SIMRAI so it can be accessed remotely by friends (e.g., 300km away).
+Execution: Outlined that SIMRAI can remain a local-first CLI while also exposing a small HTTP API or “party server” mode on the host’s machine, which friends can reach over the internet (e.g., via port forwarding or a tunneling service); clarified that the host still owns the Spotify app credentials and SIMRAI continues to use only metadata/search endpoints, with remote users only submitting mood prompts and receiving queues, not playback control.
+Changes: No code changes yet; documented this multi-user/remote-access direction here and in conversation.
+
+Request: Ask whether SIMRAI can be pushed to AWS free tier for hosting only.
+Execution: Explained that SIMRAI can be hosted on AWS free-tier infrastructure (e.g., a small EC2 instance or lightweight API service) to expose an HTTP endpoint for friends while keeping Spotify credentials and logic on the server, with considerations about free-tier limits, cold starts for serverless options, and respecting Spotify’s read-only, metadata-only usage.
+Changes: No repository changes; only deployment/hosting guidance documented here.
+
+
+Request: Turn the current SIMRAI system into a microservice with FastAPI endpoints and JSON payloads.
+Execution: Added FastAPI and uvicorn as dependencies, created src/simrai/api.py exposing a JSON POST /queue endpoint (plus /health) that wraps generate_queue and returns mood, mood_vector, summary, and track data, and extended the Typer CLI with a `simrai serve` command that runs the FastAPI app via uvicorn for local or remote hosting.
+Changes: Updated requirements.txt and pyproject.toml for FastAPI/uvicorn, added src/simrai/api.py, and modified src/simrai/cli.py to include a `serve` subcommand for running the microservice; documented this microservice step here.
+
+
+Request: Improve the overall system with enhanced CLI UI/UX.
+Execution: Refined the CLI in src/simrai/cli.py to show a spinner while generating queues, display the interpreted mood vector, and render valence/energy with inline bar visualizations, as well as highlighting when the pipeline is using a metadata-only fallback due to Spotify audio-features restrictions; ensured lints remain clean.
+Changes: Updated src/simrai/cli.py to add a small bar helper, improved header and summary styling, and more informative messaging when no tracks or when audio features are unavailable, and recorded this UX enhancement here.
+
+
+Request: Build a minimal local web UI on localhost:5658 with a Pastel Pixels theme using React, Tailwind CSS, and RPGUI.
+Execution: Scaffolded a Vite+React+TypeScript frontend in the web/ directory with Tailwind configured for a pastel pixel aesthetic, imported RPGUI styles, implemented App.tsx with a simple mood form (mood text, length slider, intense/soft toggles) and a table showing the queue with valence/energy bars, and wired it to call the FastAPI /queue endpoint on localhost:8000; also enabled CORS in the FastAPI app for localhost:5658.
+Changes: Added web/package.json, Vite/Tailwind/PostCSS/TS config files, React entrypoint and App component under web/src/, updated src/simrai/api.py to add CORS for the web UI, and documented this web-UI addition here.
+
+
+Request: Enhance the web UI’s UX with better feedback, history, and controls.
+Execution: Improved App.tsx so the Brew button shows loading state, a status pill indicates metadata-only vs full mode, recent moods are stored in localStorage with quick “use” buttons, a Copy URIs button copies all track URIs, rows have hover highlighting, typography is tuned for track/artist text, and the URI column collapses on small screens; added a pixel-pill utility class in index.css to support the new status pill styling.
+Changes: Updated web/src/App.tsx and web/src/index.css to add loading feedback, metadata mode indicator, mood history, copy-to-clipboard, and responsive/hover styling, and recorded this UX refinement here.
+
+Request: Resize all the Mario-themed web buttons to a uniform size.
+Execution: Standardized button dimensions by relying on shared Tailwind utilities: removed per-button padding overrides in App.tsx so recent-mood buttons and the Copy URIs button use the same base styles, and updated .pipe-btn in web/src/index.css to use consistent padding and font-size matching .pixel-button.
+Changes: Adjusted web/src/App.tsx to drop extra px/py overrides and tweaked web/src/index.css .pipe-btn styling so all primary buttons now share a uniform visual size; logged this refinement here.
+
+
+Request: Update SIMRAI_design_plan.txt so it matches the implemented codebase, clearly splits \"done\" vs \"to-do\", and explains the project goal for future readers.
+Execution: Bumped the design doc to Version 0.2, changed the status from \"design only\" to \"active project\", added a \"Current Implementation Snapshot\" describing the CLI, Spotify service, mood interpreter, pipeline, FastAPI API, web UI, and agent scaffolding, updated the constraints to reflect Spotify's audio-features restrictions, and rewrote the CLI/API/web section to mirror the current commands and endpoints.
+Changes: Modified SIMRAI_design_plan.txt header, architecture, constraints, and CLI/API/web design sections to serve as an accurate, code-aligned overview for new contributors, and recorded this alignment step here.
+
+Request: Add unwanted/generated files to .gitignore.
+Execution: Extended the root .gitignore with frontend-specific ignores for the Vite/React app (web/node_modules, web/dist, web/.vite) so build artifacts and dependencies from the web UI are not committed.
+Changes: Updated .gitignore to ignore the web/ node_modules, dist, and .vite directories and documented this housekeeping step here.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

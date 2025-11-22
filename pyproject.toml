@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simrai"
+version = "0.1.0"
+description = "SIMRAI – Spotify-Induced Music Recommendation AI (mood-to-queue CLI)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Project57", email = "you@example.com" }
+]
+dependencies = [
+  "typer>=0.12.0",
+  "rich>=13.0.0",
+  "httpx>=0.27.0",
+  "pydantic>=2.7.0",
+  "python-dotenv>=1.0.0",
+  "platformdirs>=4.0.0",
+  "fastapi>=0.115.0",
+  "uvicorn>=0.30.0",
+  "crewai>=0.51.0",
+  "langchain-core>=0.2.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.5.0",
+  "pyinstaller>=6.0.0"
+]
+
+[project.scripts]
+simrai = "simrai.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
