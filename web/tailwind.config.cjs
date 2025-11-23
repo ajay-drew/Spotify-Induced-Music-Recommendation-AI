@@ -4,37 +4,49 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Pastel pixels palette (kept for compatibility)
-        pastelSky: "#a5b4fc",
-        pastelMint: "#a7f3d0",
-        pastelPeach: "#fed7aa",
-        pastelRose: "#fecaca",
-        pastelLavender: "#e9d5ff",
-        pastelInk: "#0f172a",
-        // Mario-inspired palette
-        mario: {
-          red: "#E6372F", // Mario red
-          brick: "#C87928", // bricks
-          gold: "#F7C344", // coin
-          pipe: "#3FAC3B", // pipe green
-          sky: "#96D7FF", // sky blue
-          cloud: "#FFFFFF", // cloud white
-          dark: "#1A1A1A", // text/base
-          panel: "#EDE3D8", // light panel tint for contrast
+        // Cursor-inspired minimal dark theme
+        cursor: {
+          bg: "#1e1e1e",
+          surface: "#252526",
+          surfaceHover: "#2d2d30",
+          border: "#3e3e42",
+          borderLight: "#464647",
+          text: "#cccccc",
+          textMuted: "#858585",
+          textDim: "#6a6a6a",
+          accent: "#007acc",
+          accentHover: "#0098ff",
+          success: "#4ec9b0",
+          warning: "#dcdcaa",
+          error: "#f48771",
         },
       },
       fontFamily: {
-        pixel: ["'Press Start 2P'", "system-ui", "sans-serif"],
+        sans: [
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Roboto",
+          "Inter",
+          "system-ui",
+          "sans-serif",
+        ],
+        mono: [
+          "SF Mono",
+          "Monaco",
+          "Inconsolata",
+          "Fira Code",
+          "Consolas",
+          "monospace",
+        ],
       },
-      boxShadow: {
-        "pixel-soft": "0 0 0 2px rgba(15,23,42,0.35)",
-      },
-      borderRadius: {
-        pixel: "0.35rem",
+      fontSize: {
+        xs: ["11px", { lineHeight: "1.4" }],
+        sm: ["13px", { lineHeight: "1.5" }],
+        base: ["14px", { lineHeight: "1.6" }],
+        lg: ["16px", { lineHeight: "1.6" }],
       },
     },
   },
   plugins: [],
 };
-
-

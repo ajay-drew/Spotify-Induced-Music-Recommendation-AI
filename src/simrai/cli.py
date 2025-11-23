@@ -6,6 +6,7 @@ Commands:
 - serve: run the FastAPI microservice for remote access.
 """
 
+import logging
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -13,6 +14,8 @@ import uvicorn
 
 from .pipeline import generate_queue
 from .spotify import SpotifyError
+
+logger = logging.getLogger(__name__)
 
 
 app = typer.Typer(help="SIMRAI – Spotify-Induced Music Recommendation AI (mood-to-queue CLI).")
@@ -42,7 +45,10 @@ def queue(
 ) -> None:
     """
     Run the SIMRAI mood-to-queue pipeline and render a styled table.
+
+    Automatically uses AI enhancement when available, falls back to rule-based silently.
     """
+    logger.info(f"Starting queue generation for mood: {mood!r} (length={length}, intense={intense}, soft={soft})")
     console = Console()
 
     # ASCII-style header inspired by pixel platformers (original art, not Nintendo).
@@ -62,14 +68,18 @@ def queue(
                 intense=intense,
                 soft=soft,
             )
+            logger.info(f"Queue generated successfully: {len(result.tracks)} tracks")
         except SpotifyError as exc:
+            logger.error(f"Spotify error during queue generation: {exc}")
             console.print(f"[bold red]Spotify error:[/bold red] {exc}")
             raise typer.Exit(1)
         except Exception as exc:  # pragma: no cover - safety net
+            logger.exception(f"Unexpected error during queue generation: {exc}")
             console.print(f"[bold red]Unexpected error:[/bold red] {exc}")
             raise typer.Exit(1)
 
     if not result.tracks:
+        logger.warning(f"No tracks found for mood: {mood!r}")
         console.print("[bold yellow]No suitable tracks found for that mood.[/bold yellow]")
         console.print(f"[dim]{result.summary}[/dim]")
         raise typer.Exit(0)
@@ -106,13 +116,10 @@ def queue(
 
     console.print(table)
 
-    # Highlight fallback vs fully featured pipeline.
-    if "Audio features endpoint is unavailable" in result.summary:
-        console.print("[black on yellow] MODE: METADATA-ONLY (audio features blocked) [/]")
-        console.print(f"[yellow]{result.summary}[/yellow]")
-    else:
-        console.print("[black on green] MODE: FULL FEATURES [/]")
-        console.print(f"[green]{result.summary}[/green]")
+    # Display summary (always metadata-only mode now)
+    logger.info("Queue generated using metadata-only mode")
+    console.print("[black on green] MODE: METADATA-ONLY [/]")
+    console.print(f"[green]{result.summary}[/green]")
 
 
 @app.command("serve")
@@ -127,6 +134,7 @@ def serve(
     Example:
         simrai serve --host 0.0.0.0 --port 8000
     """
+    logger.info(f"Starting SIMRAI API server on {host}:{port} (reload={reload})")
     uvicorn.run(
         "simrai.api:app",
         host=host,

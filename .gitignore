@@ -210,3 +210,8 @@ __marimo__/
 web/node_modules/
 web/dist/
 web/.vite/
+web/cypress/videos/
+web/cypress/screenshots/
+
+# Text files
+*.txt

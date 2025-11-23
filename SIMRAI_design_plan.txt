@@ -1,730 +1,183 @@
 SIMRAI – Spotify-Induced Music Recommendation AI
-High-Level Design, Final Goal, and Step-by-Step Build Plan
-
-Version: 0.2 (Code-aligned Overview)
-Authoring Agent: AI assistant (Cursor)
-Status: Active project – CLI, microservice API, and web UI implemented
-
-================================================================================
-1. FINAL VISION: WHAT “SIMRAI v1.0” SHOULD FEEL LIKE
-================================================================================
-
-1.1. Core Experience
-- The user opens a terminal on macOS, Windows, Linux, or Android (Termux).
-- They type a mood in natural language, e.g.:
-  simrai "rainy midnight drive with someone you miss"
-- Within ~20 seconds, the terminal shows:
-  - A beautiful, colorized table of 12–20 Spotify tracks.
-  - Columns: position, track name, artist, short mood tags, valence/energy bars, URI snippet.
-  - A one-line emotional arc summary, e.g.:
-    "This queue starts melancholic (valence 0.22) and gently rises to quiet hope (0.58)."
-- All Spotify track URIs are copied to the clipboard automatically.
-- The user pastes those URIs into Spotify (desktop/mobile/web) and presses play.
-- No login via browser is required; only a one-time configuration of a Spotify developer app.
-
-1.2. High-Level Promise
-- “Type how you feel → SIMRAI builds a perfect queue in under 20 seconds → you paste and play.”
-- No Spotify Premium needed.
-- No cloud backend: all orchestration, scoring, and sequencing happen locally.
-- Multi-agent AI provides:
-  - Rich interpretation of the user’s mood.
-  - Smart selection of candidate songs.
-  - Psychoacoustic scoring aligned with target emotion.
-  - Narrative sequencing to create a compelling emotional journey.
-
-1.3. Non-Goals (for v1.0)
-- No direct playback control of Spotify (keeps us in a safe, non-TOS-violating zone).
-- No user-specific personalization via their listening history.
-- No “always-online” dependency on any custom backend.
-- No deep Spotify account integration: SIMRAI never logs in as a user; it only uses a developer app and read-only endpoints.
-
-================================================================================
-2. TECHNICAL CONSTRAINTS AND GUARANTEES
-================================================================================
-
-2.1. Constraints
-- Uses only free tiers:
-  - Spotify Developer API via Client Credentials flow.
-  - OSS / local-friendly LLMs or other providers only within free/monthly credit or strictly limited calls.
-- No user Spotify login or OAuth authorization code flow.
-- No playback, no playlist creation on behalf of the user.
-- Spotify Web API restrictions (as of late 2025):
-  - New apps cannot access audio-features, recommendations, or certain editorial/algorithmic endpoints.
-  - SIMRAI must treat audio features as “not generally available” unless an external, pre-approved MCP backend is used.
-- Works with internet access for Spotify and LLM calls, but:
-  - Can cache past results to reduce re-queries.
-  - All orchestration and state live locally.
-
-2.2. Guarantees
-- End-to-end response time target: < 20 seconds on mid-range laptop or Android phone.
-- Cross-platform support:
-  - Windows (PowerShell / CMD).
-  - macOS (zsh/bash).
-  - Linux.
-  - Android (Termux).
-- Distribution:
-  - Single-file executables built with PyInstaller (or equivalent) for desktop OSes.
-  - Termux-friendly install script with minimal manual steps.
-- Total installation footprint: under ~120 MB including model clients and dependencies.
-
-================================================================================
-3. HIGH-LEVEL ARCHITECTURE
-================================================================================
-
-3.1. Main Components
-- CLI Frontend
-  - Parses user input and CLI flags.
-  - Triggers the mood-to-queue pipeline.
-  - Renders rich terminal output.
-  - Handles clipboard copying and file exports.
-
-- HTTP Microservice (FastAPI)
-  - Exposes a small JSON API:
-    - POST /queue – returns a mood vector, summary, and ordered track list for a given mood.
-    - GET /health – simple health check.
-  - Designed for local hosting, party-server mode, or deployment on a small VPS / AWS free tier.
-
-- Web UI Frontend
-  - React + TailwindCSS + RPGUI-based, running on localhost:5658.
-  - Presents a playful, pixel-styled interface:
-    - Mood textarea, length slider, intense/soft toggles.
-    - “Brew Queue” CTA and a table with valence/energy bars.
-  - Talks to the FastAPI backend at localhost:8000 via JSON.
-
-- Multi-Agent Orchestrator
-  - Manages four logical agents:
-    1) Mood Alchemist
-    2) Seed Curator
-    3) Psychoacoustic Analyst
-    4) Narrative Architect
-  - Runs things in parallel where safe, especially for API calls.
-  - Handles retries, timeouts, and graceful degradation if one agent underperforms.
-  - Implementation note:
-    - Use CrewAI as the orchestration framework and a LangChain-compatible chat model as the underlying LLM interface, while keeping OSS/local-first options in mind.
-
-- Spotify Integration Layer
-  - Encapsulates all access to Spotify data, via either:
-    - Direct HTTP calls to the Spotify Web API, or
-    - An MCP server that exposes Spotify tools.
-  - Scope of access (both direct and via MCP) is strictly:
-    - Track / artist / genre metadata (including popularity, release year, basic categories).
-    - Audio features needed for psychoacoustic scoring (valence, energy, tempo, etc.) where available (typically not for new apps).
-    - No playback, playlist creation, or user-library modification.
-  - Provides typed-like responses (structured dictionaries / objects) to the agents.
-
-- AI / LLM Interface
-  - Abstracts over Anthropic, OpenAI, or other LLMs.
-  - Provides deterministic “system prompts” for each agent.
-  - Allows local caching of agent decisions for repeated moods.
-
-- Data & Caching Layer
-  - Local storage (e.g., JSON or lightweight database) for:
-    - History of mood requests and final queues.
-    - Mapping from track IDs to audio features to avoid repeated fetches.
-    - Persistent configuration (Spotify keys, defaults, user preferences).
-
-- Packaging & Distribution
-  - Build system to:
-    - Package the CLI into single-file binaries using PyInstaller.
-    - Generate a Termux install script and minimal configuration flow.
-
-3.2. Agent Responsibilities (Conceptual)
-
-Agent 1 – Mood Alchemist
-- Input:
-  - Raw user mood phrase.
-  - Optional flags (intense, soft, length, surprise, etc.).
-- Output:
-  - Target ranges for:
-    - Valence (0.0–1.0).
-    - Energy (0.0–1.0).
-    - Danceability.
-    - Acousticness.
-    - Instrumentalness.
-    - Tempo feel (slow / medium / fast, approximate BPM range).
-  - 3–6 seed elements:
-    - Seed artists.
-    - Seed genres.
-    - Seed keywords / short textual motifs.
-- Behavior:
-  - Interprets natural language metaphors and emotional nuance.
-  - Applies modifiers based on flags:
-    - “intense” narrows valence, raises energy.
-    - “soft” widens valence around lower energy, increases acousticness.
-    - “length” sets desired queue size.
-    - “surprise” marks that we want wildcard tracks later in the pipeline.
-
-Agent 2 – Seed Curator
-- Input:
-  - Mood vector and seeds from Mood Alchemist.
-  - Target queue length and modifiers (e.g., surprise).
-- Output:
-  - 40–60 candidate Spotify tracks with:
-    - Track ID, name, artists, album.
-    - Basic popularity / release year (if used for diversity).
-- Behavior:
-  - Uses Spotify search endpoints in parallel:
-    - Query by seed artists, genres, and keywords.
-    - Multiple strategies: mood keywords, artist similarity, era diversity.
-  - Ensures:
-    - Some tracks closely match the core mood.
-    - Some tracks offer creative variation but remain emotionally coherent.
-
-Agent 3 – Psychoacoustic Analyst
-- Input:
-  - 40–60 candidate tracks from Seed Curator.
-  - Target mood vector from Mood Alchemist.
-- Output:
-  - Ranked list of tracks with:
-    - Audio features (valence, energy, danceability, tempo, etc.).
-    - Score: numeric closeness to target mood.
-    - Reasoning summary (optional human-readable explanation).
-- Behavior:
-  - Fetches audio features in batches from Spotify’s audio features endpoint.
-  - Computes a distance metric:
-    - Weighted differences:
-      - High weight for valence.
-      - Next highest for energy.
-      - Moderate for danceability, acousticness, instrumentalness.
-    - Optional tempo compatibility weighting.
-  - Produces a leaderboard, e.g.:
-    - Top 40 ordered by descending mood-match score.
-
-Agent 4 – Narrative Architect
-- Input:
-  - Ranked candidate list from Psychoacoustic Analyst.
-  - Target queue length and flags (intense, soft, surprise).
-- Output:
-  - Final ordered queue of 12–20 tracks (or user-specified length).
-  - Emotional arc summary (start → midpoint → end).
-  - Explanation of any wildcard “surprise” tracks.
-- Behavior:
-  - Selects:
-    - A core set of mood-accurate tracks (e.g., top 20).
-    - 1–3 wildcard tracks when surprise is enabled.
-  - Designs an arc:
-    - Start very close to target mood.
-    - Gradually tweak energy, valence, or tempo to create progression.
-    - Ensure adjacent tracks have reasonable BPM/key compatibility (heuristic).
-  - Produces both:
-    - Machine-readable structure (for JSON output).
-    - Human-friendly explanations (short sentences).
-
-3.3. Current Implementation Snapshot (v0.2)
-- Implemented modules:
-  - CLI:
-    - `simrai.cli` – Typer-based CLI with:
-      - `simrai queue "<mood>"` – runs the pipeline and prints a Rich table with valence/energy bars.
-      - `simrai serve` – runs the FastAPI app for remote/web use.
-  - Spotify integration:
-    - `simrai.spotify` – `SpotifyService` with a direct Web API client (search + metadata; audio-features calls handled gracefully when blocked).
-  - Mood interpretation:
-    - `simrai.mood` – rule-based Mood Alchemist v0 deriving:
-      - A mood vector (valence, energy).
-      - Metadata preferences (popular/obscure, recent/classics) from the text.
-  - Pipeline:
-    - `simrai.pipeline` – end-to-end queue generation:
-      - Uses SpotifyService to fetch candidates.
-      - When audio features are unavailable (403), synthesizes valence/energy per track from metadata (popularity, year, naming).
-      - Ranks and orders tracks into a simple emotional arc and emits a summary.
-  - API:
-    - `simrai.api` – FastAPI app with `/queue` and `/health`, plus CORS for localhost:5658.
-  - Web:
-    - `web/` – Vite+React+Tailwind+RPGUI frontend:
-      - Mood form, slider, toggles, Brew button, queue table, Copy URIs, and localStorage mood history.
-      - Themed with a Mario-inspired pixel aesthetic and small sprite accents.
-  - Agents:
-    - `simrai.agents` – CrewAI/LangChain scaffolding for the four conceptual agents, currently delegating to the rule-based pipeline.
-
-- Not yet implemented:
-  - Real LLM-driven agents (Mood Alchemist, Seed Curator, Psychoacoustic Analyst, Narrative Architect).
-  - Rich multi-pattern emotional arcs (valley, complex rises/falls).
-  - Save/load commands and a persisted history system beyond the web UI’s localStorage.
-  - Optional “DJ mode” API that outputs multi-set plans rather than single queues.
-
-================================================================================
-4. CLI + API + WEB DESIGN AND COMMAND BEHAVIOR
-================================================================================
-
-4.1. Core CLI Commands (Implemented)
-- simrai queue "<mood>"
-  - Behavior:
-    - Run the current mood-to-queue pipeline with:
-      - A simple rule-based Mood Alchemist v0.
-      - Metadata-first ranking pipeline.
-    - Show a rich terminal table:
-      - Position, track, artist, valence/energy bars, URI snippet.
-    - Print a one-line summary explaining the emotional movement.
-    - Highlight whether the system is in “metadata-only” mode due to Spotify audio-feature restrictions.
-
-4.2. CLI Modifiers and Options (Implemented)
-- simrai queue "<mood>" --length N
-  - Queue length override, between 8 and 30.
-
-- simrai queue "<mood>" --intense
-  - Bias towards higher energy in the mood vector interpretation.
-
-- simrai queue "<mood>" --soft
-  - Bias towards lower energy / gentler moods.
-
-4.3. CLI Output Details (Implemented)
-- Rich Terminal Table:
-  - Columns:
-    - # (position)
-    - Track Title
-    - Artist
-    - Valence bar (e.g., a horizontal bar approximating the 0–1 value).
-    - Energy bar.
-    - URI snippet (e.g., “spotify:track:xxxx…”, truncated).
-  - Colors:
-    - Use color to distinguish sections and emphasize arc.
-
-- Summary Line:
-  - Automatically generated:
-    - Example: "This queue starts melancholic (0.22), dips briefly into nostalgia, then rises to hopeful calm (0.58)."
-
-- Clipboard Behavior:
-  - After generation, all track URIs are concatenated and copied to clipboard:
-    - Exact output format TBD (e.g., newline-separated or space-separated).
-
-- Optional JSON Export:
-  - Structured file:
-    - Mood phrase.
-    - Flags and parameters.
-    - Final ordered tracks and their features.
-    - Emotional arc meta-data.
-
-4.4. HTTP API (Implemented)
-- POST /queue
-  - Request:
-    - JSON body:
-      - mood: string
-      - length: integer (default 12)
-      - intense: bool
-      - soft: bool
-  - Response:
-    - mood: original mood string.
-    - mood_vector: object with valence/energy.
-    - summary: human-readable explanation of the queue’s arc or metadata mode.
-    - tracks: list of objects:
-      - name, artists, uri, valence, energy.
-
-- GET /health
-  - Returns `{ "status": "ok" }` for monitoring.
-
-4.5. Web UI (Implemented)
-- Single-page app on localhost:5658
-  - Mood form with:
-    - Textarea for mood.
-    - Length slider.
-    - Intense/Soft toggles.
-    - Brew button with loading spinner and Mario-inspired pipe styling.
-  - Queue view:
-    - Table mirroring CLI columns.
-    - Inline bar graphs for valence/energy.
-    - Mode pill indicating metadata-only vs full feature mode.
-    - Copy URIs button and small local history of recent moods.
-
-================================================================================
-5. IMPLEMENTATION ROADMAP – STEP BY STEP
-================================================================================
-
-Phase 0 – Planning and Scaffolding
-1) Finalize technology choices:
-   - Primary language: Python (3.10+).
-   - CLI framework: Typer (modern, Click-based, great developer ergonomics).
-   - HTTP client: httpx (async-friendly, nice API).
-   - LLM abstraction: pluggable layer targeting OSS/local-first providers, with optional future Anthropic / OpenAI adapters.
-   - Packaging tools: PyInstaller or equivalent for single-file binaries.
-2) Define repository structure:
-   - src/ for code (Python package `simrai`).
-   - tests/ for unit and integration tests.
-   - scripts/ for build and packaging helpers.
-   - config/ or .env file pattern for API keys.
-3) Clarify legal/TOS boundaries:
-   - Confirm we only:
-     - Read metadata and audio features.
-     - Do not create, modify, or play user playlists.
-
-Phase 1 – Spotify Integration (No AI Yet)
-4) Implement configuration and credentials management design:
-   - Define where to store:
-     - Spotify client ID and client secret.
-   - Decide on a local config file format and location.
-   - Plan a simple guided setup flow (first run).
-5) Design the Spotify API wrapper:
-   - Backends:
-     - Direct Web API backend using Client Credentials flow.
-     - Optional MCP backend that calls a Spotify MCP server/tooling.
-   - Auth (direct backend):
-     - Method for obtaining and refreshing access tokens using Client Credentials flow.
-   - MCP usage:
-     - Restrict MCP calls to read-only tools that return:
-       - Track / artist / genre metadata.
-       - Audio features for given track IDs.
-     - No MCP tools for playback or playlist/user-library modification.
-   - Endpoints / capabilities (common interface):
-     - Search tracks/artists/genres by query text.
-     - Fetch audio features for given track IDs in batches.
-   - Error handling:
-     - Retry policy for transient network failures.
-     - Graceful behavior when rate-limited.
-6) Plan local caching strategy:
-   - Track audio features cache keyed by Spotify track ID.
-   - Limit cache size or use simple LRU strategy if needed later.
-
-Phase 2 – Core CLI Skeleton (Still Minimal AI)
-7) Define CLI entry point behavior:
-   - Single command "simrai" with placeholder sub-commands/options.
-   - Dry-run paths that simulate responses for now (without real AI logic).
-8) Design output format:
-   - Column layout for the terminal table.
-   - Decide on a library for rich text tables and coloring.
-   - Placeholder summary line behavior.
-9) Wire up basic commands:
-   - simrai <mood>
-   - --length
-   - history
-   - save
-   (All initially can be stubbed or non-functional until various parts exist.)
-
-Phase 3 – Mood Alchemist (Agent 1)
-10) Define the internal "mood vector" schema:
-    - Exact fields and allowed ranges (valence, energy, etc.).
-    - Enum or textual representation for tempo feel.
-11) Design the Mood Alchemist prompt and behavior:
-    - How to turn free-form text into:
-      - Mood vector ranges.
-      - Seed artists/genres/keywords.
-    - How to incorporate flags (intense, soft, surprise).
-12) Implement parsing and validation logic (conceptually):
-    - Ensure that:
-      - Ranges are sane (between 0 and 1).
-      - At least some seeds are present.
-      - Fallback strategies if LLM output is incomplete or inconsistent.
-
-Phase 4 – Seed Curator (Agent 2)
-13) Translate seeds into Spotify queries:
-    - Artist-based queries.
-    - Genre tags where supported.
-    - Keyword-based track searches.
-14) Design candidate diversity strategy:
-    - Combine several search result lists.
-    - Deduplicate tracks.
-    - Ensure we reach 40–60 candidates when possible.
-15) Plan parallel execution:
-    - Run multiple searches concurrently to stay under 20 seconds.
-    - Manage API rate limits and error retries.
-
-Phase 5 – Psychoacoustic Analyst (Agent 3)
-16) Batch-fetch audio features for all candidate tracks:
-    - Implement batching respecting Spotify's per-request limits.
-17) Define scoring function:
-    - Weighted distance between:
-      - Track's valence and target valence.
-      - Track's energy and target energy.
-      - Other secondary features.
-18) Produce ranked leaderboard:
-    - Assign each track:
-      - Score.
-      - Optional short descriptor (e.g., "slightly darker than requested but similar tempo").
-19) Add safety checks:
-    - If candidate set is too small, relax constraints or re-query Seed Curator.
-
-Phase 6 – Narrative Architect (Agent 4)
-20) Design emotional arcs:
-    - Types of possible arcs:
-      - Linear rise (low → high energy or valence).
-      - Linear descent.
-      - Valley shape (energetic, down, then up).
-      - Gentle drift (small variations).
-    - Decide default arc type and when to use alternatives.
-21) Implement sequencing logic (conceptual behavior):
-    - Start near the center of target mood.
-    - Progress gradually along chosen arc.
-    - Avoid jarring adjacency (major jumps in tempo or valence).
-22) Integrate surprise behavior:
-    - How to insert wildcard tracks:
-      - At specific positions in the sequence.
-      - While still making transitions plausible.
-23) Generate human-readable summaries:
-    - Explain:
-      - Starting emotion.
-      - Midpoint shift.
-      - Ending emotion.
-    - Mention wildcard tracks briefly.
-
-Phase 7 – CLI Integration & UX Polish
-24) Glue everything together in the primary simrai command:
-    - Input: mood + flags.
-    - Pipeline:
-      - Mood Alchemist → Seed Curator → Psychoacoustic Analyst → Narrative Architect.
-    - Output:
-      - Rich table.
-      - Summary line.
-      - Clipboard copy of URIs.
-25) Implement history system:
-    - Where to store past moods and results.
-    - How to list and re-run previous moods.
-26) Implement save and load:
-    - Save final queue to JSON + plaintext with user-provided name.
-    - Allow reloading by name or file path.
-27) Implement "open" behavior:
-    - Evaluate safest and most robust method to integrate with Spotify desktop or web.
-    - Consider:
-      - Deep links.
-      - Opening a URL with multiple track URIs.
-    - Provide at least a helper that reduces user friction.
-
-Phase 8 – Performance, Offline Behavior, and Robustness
-28) Optimize pipeline performance:
-    - Parallelize Spotify API calls where possible.
-    - Reduce number of LLM calls.
-    - Cache repeated data (moods and track features).
-29) Improve offline and limited-connectivity behavior:
-    - Detect when Spotify API is unavailable.
-    - Provide meaningful error messages.
-    - Potentially reuse last-known queues or pre-cached tracks (if any).
-30) Add graceful error messaging:
-    - For each failure mode:
-      - Missing config.
-      - Token issues.
-      - Network problems.
-      - Unexpected API responses.
-
-Phase 9 – Packaging and Distribution
-31) Build single-file binaries:
-    - Windows: simrai.exe
-    - macOS: simrai-macos
-    - Linux: simrai-linux
-32) Design Termux install path:
-    - Document:
-      - Required Termux packages.
-      - Steps to install Python and dependencies.
-      - One-liner or script to install SIMRAI.
-33) Prepare GitHub distribution:
-    - README with:
-      - Quickstart.
-      - Installation instructions for each platform.
-      - Short demo examples.
-    - Releases section with pre-built binaries.
-
-Phase 10 – Testing, Tuning, and “Feels Right” Validation
-34) Automated tests:
-    - Unit tests for:
-      - Mood vector parsing and validation.
-      - Scoring function for Psychoacoustic Analyst.
-      - Narrative arc generator.
-    - Integration tests for:
-      - Full mood → queue pipeline with mocked Spotify and LLM responses.
-35) Manual subjective evaluation:
-    - Collect a diverse set of mood prompts (e.g., 30–50).
-    - Manually evaluate results:
-      - “Does this feel like the described mood?”
-      - “Are transitions smooth?”
-      - “Does the arc make emotional sense?”
-36) Iterate on prompts and weights:
-    - Adjust Mood Alchemist prompt instructions.
-    - Tune Psychoacoustic weightings for valence/energy/etc.
-    - Refine Narrative Architect rules for arc patterns.
-
-================================================================================
-6. SUCCESS METRICS AND QUALITY BAR
-================================================================================
-
-6.1. Quantitative Targets
-- Latency:
-  - Under 20 seconds for typical moods and default queue length on:
-    - Mid-range laptop.
-    - Recent Android phone via Termux (with normal mobile network).
-- Reliability:
-  - No crashes or unhandled exceptions during normal usage.
-  - Clear error messages when network or API issues happen.
-
-6.2. Qualitative Targets
-- At least 90% of internal test users feel:
-  - “Yes, this is exactly the vibe” for their prompt.
-  - Or “Close, and I’d happily listen to this now.”
-- Emotional arc feels deliberate:
-  - Not a random jumble of tracks.
-  - Noticeable but not jarring evolution across the queue.
-
-================================================================================
-7. OPEN QUESTIONS FOR THE HUMAN OWNER
-================================================================================
-
-7.1. LLM Provider Preference
-- Do you strongly prefer:
-  - Anthropic (e.g., Claude models)?
-  - OpenAI (e.g., GPT models)?
-  - Another provider or a pluggable abstraction supporting both?
-
-7.2. Local Caching Depth
-- How aggressive should local caching be?
-  - Minimal (only cache audio features and configs).
-  - Moderate (cache past moods and queues, but nothing else).
-  - Heavy (add optional local “favorites” or reuse of great queues)?
-
-7.3. “Open” Command Behavior
-- Are you comfortable with:
-  - SIMRAI trying to open Spotify desktop with deep links (where supported)?
-  - Or would you prefer:
-    - A strictly “manual paste into Spotify” model for v1.0 to keep behavior predictable?
-
-7.4. Android / Termux Experience
-- How much effort should we invest into:
-  - A very polished “5-minute Termux setup guide” (screenshots, step-by-step).
-  - Versus a simpler text-only section in the README that assumes some comfort with Termux?
-
-7.5. Mood History and Privacy
-- Since the app is privacy-first and offline-oriented:
-  - Should mood history:
-    - Be enabled by default and stored locally?
-    - Or require explicit opt-in from the user?
-
-7.6. Resolved Design Choices (v0.1)
-- LLM provider:
-  - Use OSS and free options by default.
-  - Prefer open-source, free-to-use models (for example via local runtimes or OSS-friendly APIs).
-  - Keep the AI / LLM interface pluggable so Anthropic / OpenAI can be added later without changing CLI behavior.
-- Caching and history:
-  - Cache Spotify audio features and basic metadata, plus local configuration.
-  - Do not automatically persist mood history; only store when the user explicitly asks (for example via save commands).
-  - Treat each run as ephemeral by default to preserve privacy.
-- `simrai open` behavior:
-  - Actively try to open Spotify via desktop app or browser, using system open commands and deep links where robust and TOS-safe.
-  - If automatic open fails, fall back to displaying URIs and clear manual instructions.
-- Android / Termux and speech-to-text:
-  - Provide a basic, text-only Termux setup guide in the README (copy-paste oriented, no heavy visual guide).
-  - On Android only, design an optional speech-to-text flow for entering the mood prompt, while keeping desktop platforms keyboard-only.
-- Mood history and privacy stance:
-  - No automatic history; history is on-demand only.
-  - `history` and saved queues should reflect only items that were explicitly saved or opted into by the user.
-  - Clearly document that SIMRAI does not store mood history unless the user asks it to.
-
-================================================================================
-8. NEXT ACTIONS (WHEN WE START CODING)
-================================================================================
-
-When you say “build SIMRAI now”, the next steps will be:
-1) Create the project structure (src, tests, config, scripts).
-2) Implement configuration and Spotify API integration.
-3) Scaffold the CLI with placeholder behavior.
-4) Implement each agent’s logic incrementally.
-5) Integrate, test, and then package for all target platforms.
-
-
-================================================================================
-9. 48-HOUR MVP: RESUME-READY, END-TO-END SCOPE
-================================================================================
-
-The goal of the 48-hour MVP is to keep SIMRAI simple enough to finish quickly, but complete enough to demo as a polished, resume-worthy project.
-
-9.1. What MUST be included (48-hour “done” definition)
-- End-to-end flow:
-  - User runs a single command:
-    - simrai "<mood>"
-  - System returns:
-    - A 10–15 track Spotify queue (configurable via --length).
-    - A simple emotional summary line.
-    - URIs printed in a way that can be copy-pasted into Spotify.
-- Spotify integration:
-  - Real calls to Spotify for:
-    - Searching tracks based on mood-derived keywords.
-    - Fetching audio features for candidate tracks.
-- AI logic:
-  - A minimal but real Mood Alchemist:
-    - Converts the mood text and flags (--intense, --soft) into:
-      - Target valence and energy bands.
-      - A handful of textual/artist/genre seeds.
-  - A compact Psychoacoustic scoring step:
-    - Fetches audio features.
-    - Scores candidates using a simple weighted distance to the target mood vector.
-  - A basic Narrative Architect:
-    - Sorts top-scoring tracks.
-    - Applies a very simple arc (for example, gentle rise or gentle fall).
-- CLI and UX:
-  - Support for:
-    - simrai "<mood>"
-    - simrai --length N "<mood>"
-    - simrai --intense "<mood>"
-    - simrai --soft "<mood>"
-  - A readable table (even if visually simpler than the final “beautiful” Rich output).
-- Configuration:
-  - One-time setup for Spotify credentials via a simple text-based guide and/or first-run prompt.
-
-9.2. What SHOULD be included if time allows (nice-to-have within 48 hours)
-- CLI polish:
-  - Nicer colors and table output.
-  - A clearer, more poetic emotional summary line.
-- `--surprise` flag:
-  - Inject 1–2 wildcard tracks chosen by a simple diversity heuristic.
-- `--save <name>`:
-  - Save final queues to JSON and plaintext in a local folder.
-- `simrai open` (basic attempt):
-  - Try to open Spotify desktop or web with a simple deep link or helper, with graceful fallback to manual copy-paste.
-
-9.3. What can be DEFERRED beyond 48 hours
-- Full-blown multi-pattern emotional arcs (valley, rise-then-fall, etc.).
-- Rich history browsing:
-  - Interactive selection from past moods and queues.
-- Advanced Android / Termux UX:
-  - Speech-to-text input flow (can be added shortly after MVP).
-  - Highly polished Termux guide.
-- Heavy caching and optimization:
-  - Aggressive caching strategies and performance tuning.
-- Sophisticated multi-agent orchestration frameworks:
-  - For the MVP, agents can simply be well-structured functions/modules instead of formal “agent framework” integration.
-
-9.4. Resume bullets this MVP should support
-- Examples of how this project can be highlighted on a resume or portfolio:
-  - Built an end-to-end, cross-platform CLI that turns natural language mood descriptions into Spotify queues using the Spotify Web API.
-  - Designed and implemented a multi-step AI pipeline (mood parsing → candidate generation → audio-feature-based scoring → sequence design).
-  - Integrated open-source LLM tooling and Spotify audio features to create psychoacoustically coherent playlists in under 20 seconds.
-  - Packaged the tool for easy installation and use across Windows, macOS, Linux, and Android (via Termux).
-
-
-================================================================================
-10. FUTURE “REAL-TIME / MULTI-USER” EXTENSIONS
-================================================================================
-
-The core v1.0 is single-user, local-first, and privacy-preserving. However, to support “real-time users” and make the project more impressive, we can design optional extensions that do not compromise the core philosophy.
-
-10.1. Simple shared demo mode (post-MVP)
-- Concept:
-  - Run SIMRAI as a small local web service (for example, on localhost) that:
-    - Exposes a minimal HTTP endpoint: POST /queue with a mood string.
-    - Returns the generated queue as JSON.
-  - Multiple people on the same network (e.g., at a party) can send moods to the host machine.
-- Why it’s resume-worthy:
-  - Demonstrates turning a CLI tool into a small multi-user backend.
-  - Shows experience with HTTP APIs, concurrency, and request handling.
-
-10.2. Real-time “DJ screen” visualization (post-MVP)
-- Concept:
-  - Optional simple web UI or terminal dashboard that:
-    - Shows incoming mood requests in real time.
-    - Displays currently generated queues and emotional arcs.
-  - Could be run on a laptop connected to speakers at a gathering.
-- Why it’s resume-worthy:
-  - Highlights user-centric design and visualization.
-  - Bridges AI, music psychology, and real-time UX.
-
-10.3. Multi-user constraints and privacy
-- Keep core constraints:
-  - No user login to Spotify.
-  - No tracking of individual users beyond ephemeral session IDs.
-  - No persistent mood history unless explicitly saved.
-- Deployment model:
-  - Still local-first:
-    - Host a temporary “party server” on a laptop.
-    - Guests connect over the local network or via QR code URL.
-
-10.4. Positioning for future work
-- These extensions can be described as:
-  - “Phase 2” of SIMRAI for hackathons or portfolio upgrades.
-  - Not required for the initial 48-hour build, but designed so that:
-    - The core pipeline and CLI can be reused by a web/API wrapper.
-    - Real-time multi-user capabilities can be layered on top without rewriting core logic.
+Short Design Snapshot (v0.3)
+===============================================================================
+
+1. PROJECT GOAL
+-------------------------------------------------------------------------------
+- SIMRAI turns a short, messy mood description (e.g. "rainy midnight drive
+  with someone you miss") into a Spotify queue that feels emotionally aligned.
+- It is:
+  - Local-first by default (CLI + FastAPI + React web UI).
+  - Metadata-driven (standard Spotify Web API fields).
+  - Able to create playlists for the user via explicit Spotify OAuth.
+  - Designed to later plug in an open-source LLM, but already useful without it.
+
+
+2. CURRENT IMPLEMENTATION (HIGH-LEVEL)
+-------------------------------------------------------------------------------
+- Backend (Python, under src/simrai/):
+  - CLI (`cli.py`, Typer + Rich):
+    - `simrai queue "<mood>" [--length N] [--intense] [--soft]`
+    - Shows a styled table with Track / Artist / Valence / Energy / URI.
+    - Highlights when it is using metadata-only fallback mode.
+  - FastAPI API (`api.py`):
+    - `GET /health` – health check.
+    - `POST /queue` – main JSON endpoint used by the web UI and any HTTP clients.
+    - OAuth + playlist endpoints:
+      - `GET /auth/login` – redirect to Spotify authorize page.
+      - `GET /auth/callback` – exchange code, store access/refresh tokens locally.
+      - `POST /api/create-playlist` – create a playlist in the connected account.
+      - `POST /api/add-tracks` – add a list of track URIs to a playlist.
+  - Spotify integration (`spotify.py`):
+    - `DirectSpotifyClient`:
+      - Uses Client Credentials flow.
+      - `search_tracks(query, limit)` → standard Spotify metadata.
+      - `get_audio_features(track_ids)` → audio features where allowed.
+      - Handles token refresh and basic error handling.
+    - `SpotifyService`:
+      - Simple wrapper that chooses the backend (currently direct Web API).
+  - Mood interpretation (`mood.py`):
+    - Rule-based "Mood Alchemist v0":
+      - Starts from neutral valence/energy (0.5, 0.5).
+      - Adjusts based on keywords (sad, happy, chill, rage, etc.) and flags
+        (`--intense`, `--soft`).
+      - Produces:
+        - `MoodVector(valence, energy)`.
+        - `search_terms` list for Spotify search.
+        - Preferences:
+          - `prefer_popular`, `prefer_obscure`,
+          - `prefer_recent`, `prefer_classics`.
+  - Pipeline (`pipeline.py`):
+    - `generate_queue(mood_text, length, intense, soft)`:
+      1) Calls `interpret_mood(...)` to get a target mood vector + preferences.
+      2) Uses `SpotifyService` to search for candidates (standard metadata).
+      3) Tries to fetch audio features:
+         - If available:
+           - Scores tracks via distance in (valence, energy) space.
+           - Selects best N, arranges in a gentle energy arc, returns queue.
+         - If audio features are blocked (e.g. 403):
+           - Falls back to **metadata-only scoring**:
+             - Uses popularity, release year, and text heuristics (e.g. "remix",
+               "acoustic", "piano") to synthesize valence/energy per track.
+             - Uses preferences (popular/obscure, recent/classics) to rank.
+             - Returns a queue with varied synthetic valence/energy and a
+               summary explaining that audio features were unavailable.
+  - Agents scaffold (`agents.py`):
+    - Defines four conceptual agents (Mood Alchemist, Seed Curator,
+      Psychoacoustic Analyst, Narrative Architect) using CrewAI.
+    - `run_with_agents(...)` currently delegates to `generate_queue(...)`.
+    - Ready for a future LangChain-compatible chat model (OSS LLM).
+  - Config (`config.py`):
+    - Loads `.env` with:
+      - `SIMRAI_SPOTIFY_CLIENT_ID`, `SIMRAI_SPOTIFY_CLIENT_SECRET`.
+      - Optional `SIMRAI_SPOTIFY_REDIRECT_URI`.
+      - Optional MCP settings (not yet wired).
+    - Provides a user config dir for storing OAuth tokens.
+
+- Web UI (React + Tailwind + RPGUI, under web/):
+  - Single-page app with Mario/pixel inspired styling.
+  - Talks to FastAPI at `http://localhost:8000`:
+    - `POST /queue?theme=mario` for queue generation.
+    - `GET /auth/login` (opens in a new tab) for connecting Spotify.
+    - `POST /api/create-playlist` + `/api/add-tracks` for exporting queues.
+  - Features:
+    - Mood form (textarea + length slider + intense/soft toggles).
+    - "Start (Warp Pipe)" brew button with spinner.
+    - Status pill: "MODE: METADATA-ONLY" vs "MODE: FULL FEATURES".
+    - Recent mood history (localStorage).
+    - Copy URIs button.
+    - Create SIMRAI Playlist button opening the new playlist in Spotify.
+
+- Dummy helper (`dummy/track_metadata_cli.py`):
+  - Simple CLI to inspect Spotify metadata for a song:
+    - Top matches table.
+    - Raw track JSON.
+    - Raw artist JSON (with genres).
+    - Audio features (where endpoint is allowed).
+
+
+3. KEY CONSTRAINTS AND GUARANTEES
+-------------------------------------------------------------------------------
+- Spotify usage:
+  - Uses official Web API (search, metadata, artists, audio features where
+    allowed, playlists via OAuth).
+  - No playback control; SIMRAI never presses “play” for the user.
+  - Playlist creation and adding tracks require explicit user OAuth consent.
+- Data & privacy:
+  - No automatic global mood history; any history is local and opt-in.
+  - OAuth tokens are stored only on the host machine under the user config dir.
+  - Web UI calls only the local FastAPI server; secrets never go to the browser.
+- AI / LLM:
+  - Current production path works **without** any LLM.
+  - LLM integration is optional and should be:
+    - OSS-first and free-to-use by default.
+    - Pluggable so cloud providers (OpenAI/Anthropic) can be added behind a
+      config flag later.
+
+
+4. HOW THINGS FLOW (END TO END)
+-------------------------------------------------------------------------------
+- CLI path:
+  1) User runs: `simrai queue "rainy midnight drive" --soft --length 15`.
+  2) CLI calls `generate_queue(...)`.
+  3) Pipeline:
+     - Converts text → mood vector + preferences.
+     - Calls Spotify search + (optional) audio features.
+     - Builds an ordered queue with real or synthetic valence/energy.
+  4) CLI prints Rich table + summary line and mode banner.
+
+- Web path:
+  1) User opens web app on `http://localhost:5658`.
+  2) UI collects mood + options and `POST`s to FastAPI `/queue`.
+  3) FastAPI wraps `generate_queue(...)` and returns JSON.
+  4) UI renders queue table, mood vector, mode pill, and export options.
+  5) If the user clicks "Connect Spotify":
+     - Browser opens `/auth/login` → Spotify authorize → `/auth/callback`.
+     - Tokens are stored locally on the server.
+  6) User can then create a playlist from the current queue using
+     `/api/create-playlist` + `/api/add-tracks`.
+
+
+5. FUTURE WORK (SHORT, ACTIONABLE LIST)
+-------------------------------------------------------------------------------
+These are the main "next steps" without the long narrative:
+
+- OSS LLM integration (local or cloud):
+  - Run an open-source chat model (e.g., Llama 3 8B, Mistral 7B, Phi-3) via
+    Ollama or similar.
+  - Expose it as an HTTP endpoint (either on the same machine or a small VM).
+  - Add a LangChain-compatible client in Python and wire it into
+    `AgentConfig.llm` / `run_with_agents(...)`.
+  - Optionally add a config flag to choose between:
+    - Pure rule-based pipeline (current default).
+    - Assisted pipeline (CrewAI + LLM + existing metadata logic).
+
+- Better agent usage:
+  - Have the Mood Alchemist agent:
+    - Propose a richer mood vector + seed artists/genres.
+  - Have the Seed Curator agent:
+    - Suggest more diverse candidate directions against constraints.
+  - Keep the actual Spotify calls and ranking in code (for reliability and TOS).
+
+- Multi-user / remote hosting:
+  - Run `simrai serve` on a public or tunneled host so friends can send moods.
+  - Keep credentials and OAuth tokens on that host only.
+  - Optionally add a simple authentication or API key for public demos.
+
+- Polish & packaging:
+  - Add a small installer or PyInstaller binary for easy installation.
+  - Refine CLI and web copy (more expressive summary lines).
+  - Improve docs with a short “Quickstart” for:
+    - CLI-only users.
+    - Web UI users.
+    - Users connecting their own Spotify account.
+
+
+6. HOW TO READ THIS FILE
+-------------------------------------------------------------------------------
+- This document is intentionally short:
+  - It describes **what SIMRAI is today**, **how it works**, and **what to do
+    next**, without a long story.
+  - For detailed change history and design evolution, see `.cursorrules`.
 
 

@@ -15,6 +15,12 @@ type QueueResponse = {
   tracks: Track[];
 };
 
+type SpotifyUser = {
+  id: string;
+  display_name: string | null;
+  avatar_url: string | null;
+};
+
 const API_BASE = "http://localhost:8000";
 
 function bar(value: number, width = 10): string {
@@ -32,33 +38,77 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<QueueResponse | null>(null);
-   const [recentMoods, setRecentMoods] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [playlistUrl, setPlaylistUrl] = useState<string | null>(null);
+  const [playlistMessage, setPlaylistMessage] = useState<string | null>(null);
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [showConnectedToast, setShowConnectedToast] = useState(false);
+  const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const metadataOnly = !!data && data.summary.includes("Audio features endpoint is unavailable");
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem("simrai_recent_moods");
-    if (stored) {
-      try {
-        const arr = JSON.parse(stored);
-        if (Array.isArray(arr)) {
-          setRecentMoods(arr);
-        }
-      } catch {
-        // ignore
+  const fetchSpotifyUser = async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/api/me`);
+      if (!resp.ok) {
+        return;
       }
+      const json = (await resp.json()) as SpotifyUser;
+      setSpotifyUser(json);
+      setSpotifyConnected(true);
+    } catch {
+      // ignore
     }
+  };
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      const payload = event.data as any;
+      if (!payload) return;
+      if (payload.type === "simrai-spotify-connected") {
+        setSpotifyConnected(true);
+        setPlaylistMessage("Spotify is connected. You can now create playlists.");
+        setShowConnectedToast(true);
+        setTimeout(() => setShowConnectedToast(false), 2500);
+        fetchSpotifyUser();
+      } else if (payload.type === "simrai-spotify-denied") {
+        setError("Spotify connection was denied. Please try again if you want to connect.");
+        setSpotifyConnected(false);
+        setSpotifyUser(null);
+      }
+    };
+
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
   }, []);
 
-  const rememberMood = (m: string) => {
-    const trimmed = m.trim();
-    if (!trimmed) return;
-    setRecentMoods((prev) => {
-      const next = [trimmed, ...prev.filter((p) => p !== trimmed)].slice(0, 5);
-      window.localStorage.setItem("simrai_recent_moods", JSON.stringify(next));
-      return next;
-    });
+  const startSpotifyConnect = () => {
+    window.open(
+      `${API_BASE}/auth/login`,
+      "simrai-spotify-connect",
+      "width=480,height=640"
+    );
+  };
+
+  const handleUnlinkSpotify = async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/api/unlink-spotify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!resp.ok) {
+        throw new Error("Unlink failed");
+      }
+      setSpotifyConnected(false);
+      setSpotifyUser(null);
+      setPlaylistMessage(null);
+      setShowConnectedToast(false);
+      setProfileOpen(false);
+    } catch {
+      setError("Could not unlink Spotify account.");
+    }
   };
 
   const handleCopyUris = async () => {
@@ -73,6 +123,68 @@ const App: React.FC = () => {
     }
   };
 
+  const handleCreatePlaylist = async () => {
+    if (!data || !data.tracks.length) {
+      setError("No tracks to export. Generate a queue first.");
+      return;
+    }
+    setPlaylistMessage(null);
+    setPlaylistUrl(null);
+    setError(null);
+    setPlaylistLoading(true);
+
+    const uris = data.tracks.map((t) => t.uri);
+    const name =
+      mood.trim().length > 0 ? `SIMRAI – ${mood.trim().slice(0, 40)}` : "SIMRAI Playlist";
+
+    try {
+      const createResp = await fetch(`${API_BASE}/api/create-playlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          description: "Brewed by SIMRAI",
+          public: false,
+        }),
+      });
+
+      if (createResp.status === 401) {
+        setPlaylistMessage(
+          "Spotify is not connected. Connect your account first."
+        );
+        return;
+      }
+
+      if (!createResp.ok) {
+        const text = await createResp.text();
+        throw new Error(`Create playlist failed: ${createResp.status} ${text}`);
+      }
+
+      const created = (await createResp.json()) as { playlist_id: string; url?: string };
+
+      const addResp = await fetch(`${API_BASE}/api/add-tracks`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playlist_id: created.playlist_id,
+          uris,
+        }),
+      });
+
+      if (!addResp.ok) {
+        const text = await createResp.text();
+        throw new Error(`Add tracks failed: ${addResp.status} ${text}`);
+      }
+
+      setPlaylistUrl(created.url ?? null);
+      setPlaylistMessage("Playlist created in your Spotify account!");
+    } catch (err: any) {
+      setError(err.message ?? "Something went wrong while creating the playlist.");
+    } finally {
+      setPlaylistLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!mood.trim()) {
@@ -82,9 +194,8 @@ const App: React.FC = () => {
     setError(null);
     setLoading(true);
     setCopied(false);
-    setError(null);
     try {
-      const resp = await fetch(`${API_BASE}/queue?theme=mario`, {
+      const resp = await fetch(`${API_BASE}/queue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mood, length, intense, soft }),
@@ -95,7 +206,6 @@ const App: React.FC = () => {
       }
       const json = (await resp.json()) as QueueResponse;
       setData(json);
-      rememberMood(mood);
     } catch (err: any) {
       setError(err.message ?? "Something went wrong.");
     } finally {
@@ -104,47 +214,90 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-full flex items-center justify-center p-4">
-      <div className="max-w-5xl w-full space-y-4">
-        {/* Mario-like HUD header */}
-        <header className="pixel-panel p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2">
+    <div className="min-h-screen bg-cursor-bg text-cursor-text p-8">
+      {/* Profile menu */}
+      <div className="fixed top-4 right-4 z-30">
+        <button
+          type="button"
+          className="flex items-center gap-2 px-3 py-1.5 bg-cursor-surface hover:bg-cursor-surfaceHover border border-cursor-border rounded-md text-sm transition-colors"
+          onClick={() => setProfileOpen((open) => !open)}
+        >
+          {spotifyUser?.avatar_url ? (
             <img
-              src="/sprites/mushroom-badge.png"
-              alt="SIMRAI mascot"
-              className="w-6 h-6 pixel-sprite"
+              src={spotifyUser.avatar_url}
+              alt={spotifyUser.display_name ?? "Spotify user"}
+              className="h-5 w-5 rounded-full object-cover"
             />
-            <h1 className="pixel-heading text-mario-red">
-              SIMRAI <span className="text-mario-gold">DJ</span>
-            </h1>
-          </div>
-          <div className="text-[9px] text-mario-dark/80 flex flex-col sm:items-end leading-tight">
-            <span>WORLD 1-1</span>
-            {data ? (
-              <span>
-                MOOD VEC: {data.mood_vector.valence.toFixed(2)} /{" "}
-                {data.mood_vector.energy.toFixed(2)}
-              </span>
+          ) : (
+            <span className="text-cursor-textMuted">👤</span>
+          )}
+          <span className="text-sm">
+            {spotifyConnected && spotifyUser?.display_name
+              ? spotifyUser.display_name
+              : "Not connected"}
+          </span>
+          <span className="text-cursor-textMuted">▾</span>
+        </button>
+
+        {profileOpen && (
+          <div className="mt-2 w-48 bg-cursor-surface border border-cursor-border rounded-md shadow-lg overflow-hidden">
+            {!spotifyConnected ? (
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-cursor-surfaceHover transition-colors"
+                onClick={() => {
+                  startSpotifyConnect();
+                  setProfileOpen(false);
+                }}
+              >
+                Connect to Spotify
+              </button>
             ) : (
-              <span>MOOD VEC: -- / --</span>
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm text-cursor-error hover:bg-cursor-surfaceHover transition-colors"
+                onClick={handleUnlinkSpotify}
+              >
+                Unlink Spotify
+              </button>
             )}
           </div>
+        )}
+      </div>
+
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Header */}
+        <header className="space-y-1">
+          <h1 className="text-2xl font-semibold text-cursor-text">
+            SIMRAI
+          </h1>
+          <p className="text-sm text-muted">
+            {mood.trim()
+              ? `Mood: "${mood.trim().slice(0, 40)}${mood.trim().length > 40 ? "…" : ""}"`
+              : "Describe your mood to generate a music queue"}
+          </p>
+          {data && (
+            <p className="text-xs text-dim font-mono">
+              Valence: {data.mood_vector.valence.toFixed(2)} · Energy: {data.mood_vector.energy.toFixed(2)}
+            </p>
+          )}
         </header>
 
-        <form onSubmit={handleSubmit} className="pixel-panel p-4 space-y-3">
-          <div className="qblock-panel p-3 pl-8">
-            <label className="pixel-heading block mb-2 text-mario-dark">Mood</label>
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="card space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-2">Mood</label>
             <textarea
-              className="pixel-input h-20 resize-none"
+              className="input-field h-24 resize-none"
               placeholder='e.g. "rainy midnight drive with someone you miss"'
               value={mood}
               onChange={(e) => setMood(e.target.value)}
             />
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="pixel-heading block mb-1 text-mario-dark">
+              <label className="block text-sm font-medium mb-2">
                 Length: {length} tracks
               </label>
               <input
@@ -156,176 +309,143 @@ const App: React.FC = () => {
                 className="w-full"
               />
             </div>
-            <label className="inline-flex items-center gap-2 mt-2 sm:mt-5 text-mario-dark/90">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
                 type="checkbox"
                 checked={intense}
                 onChange={(e) => setIntense(e.target.checked)}
+                className="rounded"
               />
-              <span className="pixel-heading flex items-center gap-1">
-                <img
-                  src="/sprites/mushroom-badge.png"
-                  alt=""
-                  className="w-3 h-3 pixel-sprite"
-                />
-                Intense
-              </span>
+              <span>Intense</span>
             </label>
-            <label className="inline-flex items-center gap-2 mt-2 sm:mt-5 text-mario-dark/90">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
                 type="checkbox"
                 checked={soft}
                 onChange={(e) => setSoft(e.target.checked)}
+                className="rounded"
               />
-              <span className="pixel-heading flex items-center gap-1">
-                <img src="/sprites/star-badge.png" alt="" className="w-3 h-3 pixel-sprite" />
-                Soft
-              </span>
+              <span>Soft</span>
             </label>
           </div>
 
-          <div className="flex items-center justify-between gap-3 pt-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="submit"
-                aria-label="Brew queue"
-                className={`pipe-btn pixel-border pixel-hover flex items-center gap-2 ${
-                  loading ? "opacity-80 cursor-wait" : ""
-                }`}
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <img
-                      src="/sprites/mario-run-1.png"
-                      className="w-5 h-5 pixel-sprite"
-                      alt=""
-                    />
-                    <span>Brew-ing...</span>
-                  </>
-                ) : (
-                  <>
-                    <img
-                      src="/sprites/pipe-top.png"
-                      className="w-5 h-5 pixel-sprite"
-                      alt=""
-                    />
-                    <span>Start (Warp Pipe)</span>
-                  </>
-                )}
-              </button>
-              {recentMoods.length > 0 && (
-                <div className="flex flex-wrap gap-1 text-[9px] text-mario-dark/80">
-                  {recentMoods.map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      className="pixel-button"
-                      onClick={() => setMood(m)}
-                    >
-                      use: {m.length > 14 ? `${m.slice(0, 14)}…` : m}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="flex items-center justify-between pt-2">
+            <button
+              type="submit"
+              className="btn-primary"
+              disabled={loading}
+            >
+              {loading ? "Generating..." : "Generate Queue"}
+            </button>
             {data && (
-              <div className="text-[10px] text-mario-dark/80">
-                Mood vector: valence {data.mood_vector.valence.toFixed(2)}, energy{" "}
-                {data.mood_vector.energy.toFixed(2)}
-              </div>
+              <button
+                type="button"
+                className="btn-secondary"
+                onClick={handleCreatePlaylist}
+                disabled={playlistLoading || !data.tracks.length}
+              >
+                {playlistLoading ? "Creating..." : "Create Playlist"}
+              </button>
             )}
           </div>
 
-          {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
+          {error && (
+            <p className="text-sm text-cursor-error">{error}</p>
+          )}
+          {playlistMessage && (
+            <p className="text-sm text-muted">
+              {playlistMessage}{" "}
+              {playlistUrl && (
+                <a
+                  href={playlistUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-cursor-accent hover:text-cursor-accentHover underline"
+                >
+                  Open in Spotify
+                </a>
+              )}
+            </p>
+          )}
+          {spotifyConnected && showConnectedToast && !playlistMessage && (
+            <p className="text-sm text-cursor-success">Spotify connected</p>
+          )}
         </form>
 
+        {/* Queue Results */}
         {data && data.tracks.length > 0 && (
-          <section className="pixel-panel p-4 space-y-2">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <h2 className="pixel-heading text-mario-dark">Queue</h2>
-                <span
-                  className={`pixel-pill ${
-                    metadataOnly ? "bg-mario-gold/80" : "bg-mario-pipe/80"
-                  }`}
-                >
-                  {metadataOnly ? (
-                    <>
-                      <img
-                        src="/sprites/star-badge.png"
-                        alt=""
-                        className="w-3 h-3 pixel-sprite"
-                      />
-                      MODE: METADATA-ONLY
-                    </>
-                  ) : (
-                    <>
-                      <img
-                        src="/sprites/mushroom-badge.png"
-                        alt=""
-                        className="w-3 h-3 pixel-sprite"
-                      />
-                      MODE: FULL FEATURES
-                    </>
-                  )}
+          <section className="card space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg font-semibold">Queue</h2>
+                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                  metadataOnly
+                    ? "bg-cursor-warning/20 text-cursor-warning"
+                    : "bg-cursor-success/20 text-cursor-success"
+                }`}>
+                  {metadataOnly ? "Metadata Only" : "Full Features"}
                 </span>
               </div>
-              <p className="text-[10px] text-pastelInk/70 max-w-md text-right">{data.summary}</p>
+              <p className="text-sm text-muted max-w-md text-right">
+                {data.summary}
+              </p>
             </div>
 
-            <div className="flex items-center justify-between text-[10px] text-mario-dark/80">
-              <p>
-                Tracks: {data.tracks.length} · Mood vector:{" "}
-                {data.mood_vector.valence.toFixed(2)} ⭐ {data.mood_vector.energy.toFixed(2)} ★
-              </p>
+            <div className="flex items-center justify-between text-sm text-muted">
+              <span>
+                {data.tracks.length} tracks · Valence: {data.mood_vector.valence.toFixed(2)} · Energy: {data.mood_vector.energy.toFixed(2)}
+              </span>
               <button
                 type="button"
-                className="pipe-btn pixel-border pixel-hover text-[10px]"
+                className="btn-secondary text-xs"
                 onClick={handleCopyUris}
                 disabled={!data.tracks.length}
               >
-                {copied ? "1-up! Copied!" : "Copy URIs"}
+                {copied ? "Copied!" : "Copy URIs"}
               </button>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="min-w-full text-[10px]">
+              <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="text-left text-mario-dark/80">
-                    <th className="pr-2">#</th>
-                    <th className="pr-2">Track</th>
-                    <th className="pr-2">Artist</th>
-                    <th className="pr-2">Valence</th>
-                    <th className="pr-2">Energy</th>
-                    <th className="pr-2 hidden sm:table-cell">URI</th>
+                  <tr className="text-left text-muted border-b border-cursor-border">
+                    <th className="pb-2 pr-4 font-medium">#</th>
+                    <th className="pb-2 pr-4 font-medium">Track</th>
+                    <th className="pb-2 pr-4 font-medium">Artist</th>
+                    <th className="pb-2 pr-4 font-medium">Valence</th>
+                    <th className="pb-2 pr-4 font-medium">Energy</th>
+                    <th className="pb-2 pr-4 font-medium hidden sm:table-cell">URI</th>
                   </tr>
                 </thead>
                 <tbody>
                   {data.tracks.map((t, idx) => (
                     <tr
                       key={t.uri}
-                      className={`${
-                        idx % 2 === 0 ? "bg-white/60" : "bg-white/40"
-                      } hover:bg-pastelMint/40`}
+                      className={`border-b border-cursor-border hover:bg-cursor-surfaceHover transition-colors ${
+                        idx % 2 === 0 ? "" : "bg-cursor-surface/30"
+                      }`}
                     >
-                      <td className="pr-2 py-1">{idx + 1}</td>
-                      <td className="pr-2 py-1 text-[11px] font-semibold">{t.name}</td>
-                      <td className="pr-2 py-1 text-[10px] text-pastelInk/80">{t.artists}</td>
-                      <td className="pr-2 py-1 whitespace-nowrap">
-                        {t.valence.toFixed(2)}{" "}
-                        <span className="font-mono text-[9px]">{bar(t.valence)}</span>
+                      <td className="py-3 pr-4 text-muted font-mono">{idx + 1}</td>
+                      <td className="py-3 pr-4 font-medium">{t.name}</td>
+                      <td className="py-3 pr-4 text-muted">{t.artists}</td>
+                      <td className="py-3 pr-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs">{t.valence.toFixed(2)}</span>
+                          <span className="text-xs text-muted font-mono">{bar(t.valence, 8)}</span>
+                        </div>
                       </td>
-                      <td className="pr-2 py-1 whitespace-nowrap">
-                        {t.energy.toFixed(2)}{" "}
-                        <span className="font-mono text-[9px]">{bar(t.energy)}</span>
+                      <td className="py-3 pr-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs">{t.energy.toFixed(2)}</span>
+                          <span className="text-xs text-muted font-mono">{bar(t.energy, 8)}</span>
+                        </div>
                       </td>
-                      <td className="pr-2 py-1 hidden sm:table-cell">
+                      <td className="py-3 pr-4 hidden sm:table-cell">
                         <a
                           href={t.uri}
                           target="_blank"
                           rel="noreferrer"
-                          className="underline text-pastelSky"
+                          className="text-cursor-accent hover:text-cursor-accentHover text-xs underline"
                         >
                           open
                         </a>
@@ -343,5 +463,3 @@ const App: React.FC = () => {
 };
 
 export default App;
-
-
