@@ -21,7 +21,9 @@ type SpotifyUser = {
   avatar_url: string | null;
 };
 
-const API_BASE = "http://localhost:8000";
+// In development, we hit the local FastAPI backend; in production (Render),
+// VITE_API_URL is set to the deployed API URL (e.g. https://simrai-api.onrender.com).
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
 function bar(value: number, width = 10): string {
   const v = Math.max(0, Math.min(1, value));

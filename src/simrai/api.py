@@ -53,12 +53,14 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Allow local web frontends (e.g. React dev server on localhost:5658) to call the API.
+# Allow local web frontends (e.g. React dev server on localhost:5658) and the hosted
+# Render static site (https://simrai.onrender.com) to call the API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5658",
         "http://127.0.0.1:5658",
+        "https://simrai.onrender.com",
     ],
     allow_credentials=False,
     allow_methods=["*"],
