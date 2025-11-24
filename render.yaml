@@ -22,10 +22,9 @@ services:
 
   # Frontend: React/Tailwind app built with Vite and served as static files
   - type: web
-    name: simrai-web
+    name: simrai
     env: static
     plan: free
-    region: oregon
     buildCommand: |
       cd web
       npm install
