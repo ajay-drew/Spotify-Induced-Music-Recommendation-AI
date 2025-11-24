@@ -166,20 +166,22 @@ run_cli.cmd    # Runs CLI mode only
 
 ## Monitoring Logs
 
-Logs are automatically saved to:
-- **Linux/macOS**: `~/.simrai/logs/simrai.log`
-- **Windows**: `%LOCALAPPDATA%\Project57\simrai\logs\simrai.log`
+SIMRAI uses Python's built-in `logging` module with a rotating log file plus console output.
+
+- **Log location** (via `platformdirs.user_config_dir`):
+  - Linux/macOS: typically `~/.config/simrai/logs/simrai.log`
+  - Windows: `%LOCALAPPDATA%\Project57\simrai\logs\simrai.log`
 
 View logs in real-time:
 ```bash
-# Linux/macOS
-tail -f ~/.simrai/logs/simrai.log
+# Linux/macOS (adjust path if needed)
+tail -f ~/.config/simrai/logs/simrai.log
 
 # Windows PowerShell
 Get-Content "$env:LOCALAPPDATA\Project57\simrai\logs\simrai.log" -Wait -Tail 50
 ```
 
-Set log level via environment variable:
+Configure log level via environment variable:
 ```bash
 export SIMRAI_LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
 ```
