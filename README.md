@@ -10,7 +10,7 @@
 
 ### 🧠 **AI-Powered Interpretation**
 - **Spotify**: Relies on listening history and collaborative filtering
-- **SIMRAI**: Uses AI agents to understand nuanced emotional descriptions and translate them into precise musical parameters (valence, energy, tempo)
+- **SIMRAI**: Uses a lightweight Groq-backed model (plus rule-based logic) to understand nuanced emotional descriptions and translate them into precise musical parameters (valence, energy, intensity)
 
 ### 🎨 **Creative & Flexible**
 - **Spotify**: Limited to existing playlists and algorithmic suggestions
@@ -134,10 +134,10 @@ run_cli.cmd    # Runs CLI mode only
 ├── src/simrai/          # Python package
 │   ├── cli.py          # CLI entrypoint
 │   ├── api.py          # FastAPI endpoints
-│   ├── pipeline.py     # Queue generation logic
-│   ├── mood.py         # Mood interpretation
+│   ├── pipeline.py     # Queue generation logic (metadata-first, no audio-features)
+│   ├── mood.py         # Mood interpretation (rule-based core + optional Groq refinement)
 │   ├── spotify.py      # Spotify integration
-│   └── agents.py       # AI agent orchestration
+│   └── agents.py       # Lightweight compatibility stubs (no CrewAI)
 ├── web/                # React frontend
 │   ├── src/
 │   └── package.json
@@ -162,7 +162,7 @@ run_cli.cmd    # Runs CLI mode only
 
 4. **Queue Generation**: Creates an ordered queue with gentle energy progression
 
-5. **Optional AI Enhancement**: Uses Groq-powered agents to refine mood interpretation
+5. **Optional AI Enhancement**: Uses a single Groq-powered model call to refine mood interpretation (no complex agent framework)
 
 ## Monitoring Logs
 
