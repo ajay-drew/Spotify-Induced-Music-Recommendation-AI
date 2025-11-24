@@ -11,14 +11,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
  && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies first for better Docker layer caching
-COPY requirements.txt pyproject.toml ./
+# Copy the full project into the image so setuptools can see the 'src' package layout
+COPY . .
+
+# Install Python dependencies and the local package
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir .
-
-# Copy the rest of the application code
-COPY . .
 
 # By default, FastAPI/uvicorn will listen on 8000
 EXPOSE 8000
