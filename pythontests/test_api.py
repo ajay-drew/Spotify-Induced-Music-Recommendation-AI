@@ -117,10 +117,7 @@ def test_health_endpoint() -> None:
 
 def test_queue_endpoint_ai_fallback_integration(monkeypatch, tmp_path: Path) -> None:
     """Test that /queue automatically falls back when AI is unavailable."""
-    # Disable AI
-    monkeypatch.setattr("simrai.pipeline.is_ai_available", lambda: False)
-
-    # Use fake generate_queue that simulates rule-based behavior
+    # Use fake generate_queue that simulates the metadata-first, rule-based behavior
     monkeypatch.setattr("simrai.api.generate_queue", _fake_generate_queue, raising=True)
 
     client = TestClient(app)

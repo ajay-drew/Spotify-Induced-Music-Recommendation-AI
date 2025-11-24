@@ -21,17 +21,6 @@ from .spotify import SpotifyService
 
 logger = logging.getLogger(__name__)
 
-# is_ai_available is imported lazily inside generate_queue to avoid circular imports
-# Tests can patch simrai.agents.is_ai_available directly, or patch this module's
-# _is_ai_available function after the module loads
-def _is_ai_available():
-    """Lazy wrapper for is_ai_available to avoid circular imports."""
-    from .agents import is_ai_available
-    return is_ai_available()
-
-# Export for tests - they can patch this function
-is_ai_available = _is_ai_available
-
 
 @dataclass
 class QueueTrack:
@@ -137,43 +126,26 @@ def generate_queue(
     length: int = 12,
     intense: bool = False,
     soft: bool = False,
-) -> QueueResult:
+    ) -> QueueResult:
     """
     Generate a simple ordered queue for a mood using the v0 pipeline.
 
-    Automatically attempts AI enhancement if available, falls back to rule-based silently.
+    This pipeline is **metadata-first** and **Groq-backed**:
+    - `interpret_mood` always runs locally and optionally calls Groq (if configured)
+      to refine the mood vector and search terms.
+    - Queue generation itself is purely metadata-based (Spotify search + heuristics),
+      with no CrewAI or audio-features endpoint.
     """
-    logger.info(f"Generating queue for mood: {mood_text!r} (length={length}, intense={intense}, soft={soft})")
-    
-    # Try AI enhancement if available, fallback to rule-based
-    try:
-        from .agents import AgentConfig, build_crew, create_groq_llm, is_ai_available as _check_ai, run_with_agents
+    logger.info(
+        "Generating queue for mood: %r (length=%d, intense=%s, soft=%s)",
+        mood_text,
+        length,
+        intense,
+        soft,
+    )
 
-        if _check_ai():
-            logger.info("AI enhancement available, attempting agent-based queue generation")
-            llm = create_groq_llm()
-            if llm:
-                logger.debug(f"Created Groq LLM: {type(llm).__name__}")
-                cfg = AgentConfig(llm=llm)
-                crew = build_crew(cfg)
-                logger.debug("Crew built successfully, running with agents")
-                result = run_with_agents(
-                    mood_text,
-                    length=length,
-                    intense=intense,
-                    soft=soft,
-                    crew=crew,
-                )
-                logger.info(f"AI-enhanced queue generated: {len(result.tracks)} tracks")
-                return result
-            else:
-                logger.warning("Failed to create Groq LLM instance")
-    except Exception as exc:
-        # Silently fall back to rule-based on any error
-        logger.warning(f"AI enhancement failed, falling back to rule-based: {exc}")
-
-    # Rule-based fallback
-    logger.debug("Using rule-based mood interpretation")
+    # Interpret mood (rule-based core with optional Groq refinement inside interpret_mood)
+    logger.debug("Interpreting mood using rule-based + optional Groq refinement")
     interpretation: MoodInterpretation = interpret_mood(mood_text, intense=intense, soft=soft)
     vector = interpretation.vector
     logger.debug(f"Mood vector: valence={vector.valence:.2f}, energy={vector.energy:.2f}, search_terms={interpretation.search_terms}")

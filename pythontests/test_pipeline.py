@@ -91,43 +91,25 @@ def test_generate_queue_metadata_ranking_variation(monkeypatch) -> None:
     assert len(energies) > 0, "Should have energy values"
 
 
-def test_generate_queue_ai_fallback_when_unavailable(monkeypatch) -> None:
+def test_generate_queue_always_uses_metadata_pipeline(monkeypatch) -> None:
     """
-    Test that generate_queue falls back to rule-based when AI is unavailable.
+    Test that generate_queue always uses the metadata-first pipeline without CrewAI.
+
+    We simulate Spotify results and verify that:
+    - Tracks are returned.
+    - The mood vector is always present (rule-based + optional Groq inside interpret_mood).
     """
-    # Disable AI - patch at the module level where it's used
-    with patch("simrai.pipeline.is_ai_available", return_value=False):
-        def fake_service_init(self, cfg=None):  # noqa: ARG001
-            self._backend = _FakeSpotifyService()
 
-        monkeypatch.setattr(SpotifyService, "__init__", fake_service_init, raising=True)
+    def fake_service_init(self, cfg=None):  # noqa: ARG001
+        self._backend = _FakeSpotifyService()
 
-        result = generate_queue("test mood", length=2)
+    monkeypatch.setattr(SpotifyService, "__init__", fake_service_init, raising=True)
 
-        assert result.tracks
-        # Should use rule-based interpretation (no AI enhancement)
-        assert result.mood_vector.valence >= 0.0
-        assert result.mood_vector.energy >= 0.0
+    result = generate_queue("test mood", length=2)
 
-
-def test_generate_queue_ai_fallback_on_error(monkeypatch) -> None:
-    """
-    Test that generate_queue falls back to rule-based when AI raises an error.
-    """
-    # Enable AI but make it fail
-    with patch("simrai.pipeline.is_ai_available", return_value=True), patch(
-        "simrai.agents.create_groq_llm", side_effect=Exception("AI error")
-    ):
-        def fake_service_init(self, cfg=None):  # noqa: ARG001
-            self._backend = _FakeSpotifyService()
-
-        monkeypatch.setattr(SpotifyService, "__init__", fake_service_init, raising=True)
-
-        result = generate_queue("test mood", length=2)
-
-        assert result.tracks
-        # Should have fallen back to rule-based
-        assert result.mood_vector.valence >= 0.0
+    assert result.tracks
+    assert result.mood_vector.valence >= 0.0
+    assert result.mood_vector.energy >= 0.0
 
 
 
