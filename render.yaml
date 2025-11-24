@@ -1,16 +1,18 @@
 services:
-  # Backend: FastAPI + Uvicorn, using the existing Dockerfile
+  # ──────────────────────────────
+  # Backend: FastAPI + Uvicorn (Docker) — Web Service (free tier supported)
+  # ──────────────────────────────
   - type: web
     name: simrai-api
-    env: docker
-    plan: free
+    env: docker                     # Uses your existing Dockerfile
     region: oregon
+    plan: free                      # Valid for Web Services
     autoDeploy: true
     healthCheckPath: /health
-    # Dockerfile CMD already runs: uvicorn simrai.api:app --host 0.0.0.0 --port 8000
+
     envVars:
       - key: SIMRAI_SPOTIFY_CLIENT_ID
-        sync: false
+        sync: false                 # Enter secret in dashboard
       - key: SIMRAI_SPOTIFY_CLIENT_SECRET
         sync: false
       - key: SIMRAI_SPOTIFY_REDIRECT_URI
@@ -20,19 +22,22 @@ services:
       - key: SIMRAI_LOG_LEVEL
         value: INFO
 
-  # Frontend: React/Tailwind app built with Vite and served as static files
+  # ──────────────────────────────
+  # Frontend: React + Vite → Static Site (always free; no plan field)
+  # ──────────────────────────────
   - type: web
     name: simrai
-    env: static
-    plan: free
-    buildCommand: |
-      cd web
-      npm install
+    env: static                     # This makes it a Static Site
+    autoDeploy: true
+
+    buildCommand: >-
+      cd web &&
+      npm ci &&
       npm run build
-    staticPublishPath: web/dist
+
+    staticPublishPath: web/dist     # Vite's output folder
+
     envVars:
-      # Point the frontend at the deployed backend URL
       - key: VITE_API_URL
         value: https://simrai-api.onrender.com
-
 
