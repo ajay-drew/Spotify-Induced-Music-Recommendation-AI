@@ -469,18 +469,9 @@ def auth_callback(
         """
         return HTMLResponse(content=html)
 
-    if not _cfg.spotify.client_id or not _cfg.spotify.client_secret:
-        raise HTTPException(
-            status_code=500,
-            detail="Spotify client ID/secret are not configured.",
-        )
-
-    if not _cfg.spotify.redirect_uri:
-        redirect_uri = "http://localhost:8000/auth/callback"
-    else:
-        redirect_uri = _cfg.spotify.redirect_uri
-
-    # Verify state to prevent CSRF attacks (supports concurrent OAuth flows)
+    # Verify state to prevent CSRF attacks (supports concurrent OAuth flows).
+    # This must happen *before* we touch Spotify credentials so that invalid or
+    # missing state always returns a Security Error page rather than a 500.
     if not state or state not in _oauth_states:
         logger.error(f"OAuth callback: invalid or expired state (CSRF protection)")
         html = """
@@ -513,6 +504,17 @@ def auth_callback(
     
     # Remove used state to prevent replay attacks
     del _oauth_states[state]
+
+    # Ensure Spotify client credentials are configured before exchanging code.
+    if not _cfg.spotify.client_id or not _cfg.spotify.client_secret:
+        raise HTTPException(
+            status_code=500,
+            detail="Spotify client ID/secret are not configured.",
+        )
+
+    # Redirect URI is fixed; the Spotify Developer dashboard must be configured
+    # with the same value for this app.
+    redirect_uri = "http://localhost:8000/auth/callback"
 
     # Exchange authorization code for tokens (only happens if user approved)
     logger.info("Exchanging authorization code for tokens")
