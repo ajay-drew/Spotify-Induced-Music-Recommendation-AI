@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, Mock
 import time
 
-from src.simrai.api import app
-from src.simrai import api
+from simrai.api import app
+from simrai import api
 
 
 @pytest.fixture
@@ -34,7 +34,7 @@ class TestQueueRateLimiting:
 
     def test_queue_allows_requests_under_limit(self, client):
         """Should allow requests under the rate limit."""
-        with patch('src.simrai.api.generate_queue') as mock_generate:
+        with patch('simrai.api.generate_queue') as mock_generate:
             mock_generate.return_value = Mock(
                 mood_text="test",
                 mood_vector=Mock(valence=0.5, energy=0.5),
@@ -52,7 +52,7 @@ class TestQueueRateLimiting:
 
     def test_queue_blocks_requests_over_limit(self, client):
         """Should block requests that exceed the rate limit."""
-        with patch('src.simrai.api.generate_queue') as mock_generate:
+        with patch('simrai.api.generate_queue') as mock_generate:
             mock_generate.return_value = Mock(
                 mood_text="test",
                 mood_vector=Mock(valence=0.5, energy=0.5),
@@ -78,7 +78,7 @@ class TestQueueRateLimiting:
 
     def test_queue_rate_limit_error_message(self, client):
         """Rate limit error should have helpful message."""
-        with patch('src.simrai.api.generate_queue') as mock_generate:
+        with patch('simrai.api.generate_queue') as mock_generate:
             mock_generate.return_value = Mock(
                 mood_text="test",
                 mood_vector=Mock(valence=0.5, energy=0.5),
@@ -102,8 +102,8 @@ class TestPlaylistRateLimiting:
 
     def test_create_playlist_rate_limit(self, client):
         """Should limit playlist creation to 5 per minute."""
-        with patch('src.simrai.api._get_session_user_id') as mock_session, \
-             patch('src.simrai.api._get_user_access_token') as mock_token, \
+        with patch('simrai.api._get_session_user_id') as mock_session, \
+             patch('simrai.api._get_user_access_token') as mock_token, \
              patch.object(api._oauth_http, 'get') as mock_get, \
              patch.object(api._oauth_http, 'post') as mock_post:
             
@@ -144,8 +144,8 @@ class TestPlaylistRateLimiting:
 
     def test_add_tracks_rate_limit(self, client):
         """Should limit track additions to 10 per minute."""
-        with patch('src.simrai.api._get_session_user_id') as mock_session, \
-             patch('src.simrai.api._get_user_access_token') as mock_token, \
+        with patch('simrai.api._get_session_user_id') as mock_session, \
+             patch('simrai.api._get_user_access_token') as mock_token, \
              patch.object(api._oauth_http, 'post') as mock_post:
             
             mock_session.return_value = "test_user"
@@ -182,7 +182,7 @@ class TestRateLimitByIP:
 
     def test_different_ips_have_separate_limits(self, client):
         """Different IP addresses should have separate rate limits."""
-        with patch('src.simrai.api.generate_queue') as mock_generate:
+        with patch('simrai.api.generate_queue') as mock_generate:
             mock_generate.return_value = Mock(
                 mood_text="test",
                 mood_vector=Mock(valence=0.5, energy=0.5),
@@ -239,7 +239,7 @@ class TestRateLimitProtectsSpotify:
 
     def test_rate_limit_prevents_dos_attack(self, client):
         """Rate limiting should prevent DoS attacks."""
-        with patch('src.simrai.api.generate_queue') as mock_generate:
+        with patch('simrai.api.generate_queue') as mock_generate:
             mock_generate.return_value = Mock(
                 mood_text="test",
                 mood_vector=Mock(valence=0.5, energy=0.5),
@@ -274,7 +274,7 @@ class TestRateLimitConfiguration:
 
     def test_rate_limit_headers_present(self, client):
         """Rate limit responses should include helpful headers."""
-        with patch('src.simrai.api.generate_queue') as mock_generate:
+        with patch('simrai.api.generate_queue') as mock_generate:
             mock_generate.return_value = Mock(
                 mood_text="test",
                 mood_vector=Mock(valence=0.5, energy=0.5),
@@ -314,7 +314,7 @@ class TestRateLimitEdgeCases:
 
     def test_rate_limit_persists_across_sessions(self, client):
         """Rate limit should persist even if user changes session."""
-        with patch('src.simrai.api.generate_queue') as mock_generate:
+        with patch('simrai.api.generate_queue') as mock_generate:
             mock_generate.return_value = Mock(
                 mood_text="test",
                 mood_vector=Mock(valence=0.5, energy=0.5),

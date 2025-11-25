@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch, MagicMock
 import time
 import secrets
 
-from src.simrai import api
+from simrai import api
 
 
 class TestOAuthStateManagement:

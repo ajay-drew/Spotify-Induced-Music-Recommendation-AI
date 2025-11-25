@@ -43,6 +43,7 @@ import secrets
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from .config import load_config, get_default_config_dir
 from .pipeline import QueueResult, QueueTrack, generate_queue
@@ -59,9 +60,10 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Add rate limit handler
+# Add rate limit handler and middleware
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # Allow local web frontends (e.g. React dev server on localhost:5658) and the hosted
 # Render static site (https://simrai.onrender.com) to call the API.
@@ -112,8 +114,8 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/queue", response_model=QueueResponse, tags=["queue"])
 @limiter.limit("10/minute")  # Max 10 queue generations per minute per IP
+@app.post("/queue", response_model=QueueResponse, tags=["queue"])
 def create_queue(body: QueueRequest, request: Request) -> QueueResponse:
     logger.info(f"API queue request: mood={body.mood!r}, length={body.length}, intense={body.intense}, soft={body.soft}")
     try:
@@ -776,8 +778,8 @@ def api_unlink_spotify(request: Request, response: Response) -> UnlinkSpotifyOut
     return UnlinkSpotifyOut(status="unlinked")
 
 
-@app.post("/api/create-playlist", tags=["spotify"])
 @limiter.limit("5/minute")  # Max 5 playlist creations per minute per IP
+@app.post("/api/create-playlist", tags=["spotify"])
 def api_create_playlist(body: CreatePlaylistRequest, request: Request) -> JSONResponse:
     """
     Create a playlist in the connected user's Spotify account.
@@ -846,8 +848,8 @@ def api_create_playlist(body: CreatePlaylistRequest, request: Request) -> JSONRe
     )
 
 
-@app.post("/api/add-tracks", tags=["spotify"])
 @limiter.limit("10/minute")  # Max 10 track additions per minute per IP
+@app.post("/api/add-tracks", tags=["spotify"])
 def api_add_tracks(body: AddTracksRequest, request: Request) -> JSONResponse:
     """
     Add tracks to an existing Spotify playlist for the connected user.

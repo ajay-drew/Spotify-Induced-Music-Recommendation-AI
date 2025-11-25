@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from simrai.api import app, _get_user_access_token, _save_tokens, _tokens_path
+from simrai.api import app
 from simrai.mood import MoodVector
 from simrai.pipeline import QueueResult, QueueTrack
 
