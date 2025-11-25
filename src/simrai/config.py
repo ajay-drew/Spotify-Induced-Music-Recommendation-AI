@@ -28,7 +28,6 @@ class SpotifyConfig:
     client_secret: str
     mcp_server_url: Optional[str] = None  # Optional: use Spotify via MCP instead of direct Web API.
     use_mcp_first: bool = False  # If True and mcp_server_url is set, prefer MCP over direct Web API.
-    redirect_uri: Optional[str] = None  # Optional: OAuth redirect URI for user-level flows.
 
 
 @dataclass
@@ -55,7 +54,6 @@ def load_config() -> AppConfig:
     client_id = os.getenv("SIMRAI_SPOTIFY_CLIENT_ID", "")
     client_secret = os.getenv("SIMRAI_SPOTIFY_CLIENT_SECRET", "")
     mcp_server_url = os.getenv("SIMRAI_SPOTIFY_MCP_SERVER_URL")
-    redirect_uri = os.getenv("SIMRAI_SPOTIFY_REDIRECT_URI")
     use_mcp_first = os.getenv("SIMRAI_SPOTIFY_USE_MCP_FIRST", "false").lower() in {"1", "true", "yes"}
 
     if not client_id or not client_secret:
@@ -68,7 +66,6 @@ def load_config() -> AppConfig:
         client_secret=client_secret,
         mcp_server_url=mcp_server_url,
         use_mcp_first=use_mcp_first,
-        redirect_uri=redirect_uri,
     )
     return AppConfig(spotify=spotify_cfg)
 

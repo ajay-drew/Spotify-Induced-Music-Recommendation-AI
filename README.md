@@ -67,14 +67,13 @@
    ```env
    SIMRAI_SPOTIFY_CLIENT_ID=your_client_id
    SIMRAI_SPOTIFY_CLIENT_SECRET=your_client_secret
-   SIMRAI_SPOTIFY_REDIRECT_URI=http://localhost:8000/auth/callback
    ```
    
    Get your credentials:
    - Go to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
    - Create a new app
    - Copy Client ID and Client Secret
-   - Add `http://localhost:8000/auth/callback` as a redirect URI
+   - In your Spotify app settings, add `http://localhost:8000/auth/callback` as a redirect URI
 
 4. **Optional: Set up AI enhancement**
    ```env

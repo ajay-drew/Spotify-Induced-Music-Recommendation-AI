@@ -25,7 +25,6 @@ EXPOSE 8000
 # Environment variables like:
 # - SIMRAI_SPOTIFY_CLIENT_ID
 # - SIMRAI_SPOTIFY_CLIENT_SECRET
-# - SIMRAI_SPOTIFY_REDIRECT_URI
 # - GROQ_API_KEY
 # should be provided at runtime (e.g. via docker run -e or your orchestrator).
 

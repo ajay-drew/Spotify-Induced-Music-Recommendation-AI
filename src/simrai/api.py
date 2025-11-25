@@ -347,7 +347,9 @@ def auth_login() -> RedirectResponse:
 
     logger.info("OAuth login initiated")
     client_id = _cfg.spotify.client_id
-    redirect_uri = _cfg.spotify.redirect_uri or "http://localhost:8000/auth/callback"
+    # Redirect URI is managed in the Spotify Developer dashboard; SIMRAI always
+    # uses the standard local callback path.
+    redirect_uri = "http://localhost:8000/auth/callback"
 
     if not client_id:
         logger.error("OAuth login failed: SIMRAI_SPOTIFY_CLIENT_ID not set")
