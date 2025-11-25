@@ -114,7 +114,7 @@ def health() -> dict:
 
 @app.post("/queue", response_model=QueueResponse, tags=["queue"])
 @limiter.limit("10/minute")  # Max 10 queue generations per minute per IP
-def create_queue(request: Request, body: QueueRequest) -> QueueResponse:
+def create_queue(body: QueueRequest, request: Request) -> QueueResponse:
     logger.info(f"API queue request: mood={body.mood!r}, length={body.length}, intense={body.intense}, soft={body.soft}")
     try:
         # generate_queue automatically tries AI if available, falls back to rule-based
