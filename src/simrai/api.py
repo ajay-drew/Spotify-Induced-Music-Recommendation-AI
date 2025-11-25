@@ -35,10 +35,14 @@ import logging
 from typing import List, Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
 from pydantic import BaseModel
+import secrets
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from .config import load_config, get_default_config_dir
 from .pipeline import QueueResult, QueueTrack, generate_queue
@@ -46,6 +50,8 @@ from .spotify import SpotifyError
 
 logger = logging.getLogger(__name__)
 
+# Rate limiter to prevent hitting Spotify/Groq API limits
+limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(
     title="SIMRAI API",
@@ -53,8 +59,13 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Add rate limit handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Allow local web frontends (e.g. React dev server on localhost:5658) and the hosted
 # Render static site (https://simrai.onrender.com) to call the API.
+# Credentials enabled for session cookies.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -62,7 +73,7 @@ app.add_middleware(
         "http://127.0.0.1:5658",
         "https://simrai.onrender.com",
     ],
-    allow_credentials=False,
+    allow_credentials=True,  # Required for cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -102,7 +113,8 @@ def health() -> dict:
 
 
 @app.post("/queue", response_model=QueueResponse, tags=["queue"])
-def create_queue(body: QueueRequest) -> QueueResponse:
+@limiter.limit("10/minute")  # Max 10 queue generations per minute per IP
+def create_queue(request: Request, body: QueueRequest) -> QueueResponse:
     logger.info(f"API queue request: mood={body.mood!r}, length={body.length}, intense={body.intense}, soft={body.soft}")
     try:
         # generate_queue automatically tries AI if available, falls back to rule-based
@@ -162,8 +174,9 @@ SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
 _oauth_http = httpx.Client(timeout=10.0)
 _cfg = load_config()
 _config_dir = get_default_config_dir()
-_tokens_path = _config_dir / "spotify_oauth.json"
-_last_oauth_state: Optional[str] = None
+_tokens_dir = _config_dir / "spotify_tokens"  # Directory for per-user tokens
+_oauth_states: dict[str, float] = {}  # state -> timestamp (for expiry cleanup)
+_sessions: dict[str, str] = {}  # session_id -> user_id mapping
 
 
 class SearchRequest(BaseModel):
@@ -193,38 +206,74 @@ class UnlinkSpotifyOut(BaseModel):
     status: str
 
 
-def _load_tokens() -> Optional[dict]:
-    if not _tokens_path.exists():
+def _get_token_path(user_id: str) -> Path:
+    """Get the token file path for a specific user."""
+    _tokens_dir.mkdir(parents=True, exist_ok=True)
+    # Use user_id as filename (sanitized)
+    safe_user_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in user_id)
+    return _tokens_dir / f"{safe_user_id}.json"
+
+
+def _load_tokens(user_id: str) -> Optional[dict]:
+    """Load tokens for a specific user."""
+    token_path = _get_token_path(user_id)
+    if not token_path.exists():
         return None
     try:
         import json
 
-        with _tokens_path.open("r", encoding="utf-8") as f:
+        with token_path.open("r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return None
 
 
-def _save_tokens(data: dict) -> None:
+def _save_tokens(user_id: str, data: dict) -> None:
+    """Save tokens for a specific user."""
     import json
 
-    _config_dir.mkdir(parents=True, exist_ok=True)
-    with _tokens_path.open("w", encoding="utf-8") as f:
+    token_path = _get_token_path(user_id)
+    _tokens_dir.mkdir(parents=True, exist_ok=True)
+    with token_path.open("w", encoding="utf-8") as f:
         json.dump(data, f)
 
 
-def _get_user_access_token() -> str:
+def _delete_tokens(user_id: str) -> None:
+    """Delete tokens for a specific user."""
+    token_path = _get_token_path(user_id)
+    try:
+        token_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _get_session_user_id(request: Request) -> str:
     """
-    Return a valid user access token, refreshing if needed.
+    Get the user_id for the current session from cookies.
+    Raises HTTPException if no session found.
+    """
+    session_id = request.cookies.get("simrai_session")
+    if not session_id or session_id not in _sessions:
+        logger.warning("No valid session found in request")
+        raise HTTPException(
+            status_code=401,
+            detail="No active session. Please connect your Spotify account."
+        )
+    return _sessions[session_id]
+
+
+def _get_user_access_token(user_id: str) -> str:
+    """
+    Return a valid user access token for a specific user, refreshing if needed.
 
     This keeps tokens on disk under the user's config dir and never exposes
-    them to the frontend. Intended for local use only.
+    them to the frontend. Supports multiple concurrent users.
     """
     import time
 
-    tokens = _load_tokens()
+    tokens = _load_tokens(user_id)
     if not tokens:
-        logger.warning("User access token requested but no tokens found")
+        logger.warning(f"User access token requested for {user_id} but no tokens found")
         raise HTTPException(status_code=401, detail="Spotify is not connected. Visit /auth/login.")
 
     access_token = tokens.get("access_token")
@@ -232,15 +281,15 @@ def _get_user_access_token() -> str:
     refresh_token = tokens.get("refresh_token")
 
     if not access_token or not expires_at or not refresh_token:
-        logger.warning("User access token requested but tokens are invalid")
+        logger.warning(f"User access token requested for {user_id} but tokens are invalid")
         raise HTTPException(status_code=401, detail="Spotify tokens are invalid. Reconnect via /auth/login.")
 
     if time.time() < float(expires_at) - 10:
-        logger.debug("Using cached access token")
+        logger.debug(f"Using cached access token for {user_id}")
         return access_token
 
     # Refresh
-    logger.info("Refreshing expired access token")
+    logger.info(f"Refreshing expired access token for {user_id}")
     if not _cfg.spotify.client_id or not _cfg.spotify.client_secret:
         logger.error("Cannot refresh token: client ID/secret missing")
         raise HTTPException(status_code=500, detail="Spotify client ID/secret missing for refresh.")
@@ -277,8 +326,8 @@ def _get_user_access_token() -> str:
 
     tokens["access_token"] = new_access_token
     tokens["expires_at"] = _t.time() + expires_in
-    _save_tokens(tokens)
-    logger.info("Access token refreshed successfully")
+    _save_tokens(user_id, tokens)
+    logger.info(f"Access token refreshed successfully for {user_id}")
     return new_access_token
 
 
@@ -292,8 +341,7 @@ def auth_login() -> RedirectResponse:
     """
     from urllib.parse import urlencode
     import secrets
-
-    global _last_oauth_state
+    import time
 
     logger.info("OAuth login initiated")
     client_id = _cfg.spotify.client_id
@@ -306,19 +354,29 @@ def auth_login() -> RedirectResponse:
             detail="SIMRAI_SPOTIFY_CLIENT_ID is not set. Cannot start OAuth login.",
         )
 
-    _last_oauth_state = secrets.token_urlsafe(16)
-    scopes = "playlist-modify-private"
-    logger.debug(f"OAuth state generated, redirect_uri={redirect_uri}")
+    # Generate unique state for this OAuth flow (prevents race conditions)
+    state = secrets.token_urlsafe(32)
+    _oauth_states[state] = time.time()
+    
+    # Clean up expired states (older than 10 minutes)
+    current_time = time.time()
+    expired_states = [s for s, t in _oauth_states.items() if current_time - t > 600]
+    for s in expired_states:
+        del _oauth_states[s]
+    
+    scopes = "playlist-modify-private playlist-modify-public"
+    logger.debug(f"OAuth state generated: {state[:8]}..., redirect_uri={redirect_uri}")
 
     params = {
         "client_id": client_id,
         "response_type": "code",
         "redirect_uri": redirect_uri,
         "scope": scopes,
-        "state": _last_oauth_state,
+        "state": state,
+        "show_dialog": "true",  # Force consent screen + account picker every time
     }
     url = f"{SPOTIFY_AUTHORIZE_URL}?{urlencode(params)}"
-    logger.info("Redirecting to Spotify authorization page")
+    logger.info("Redirecting to Spotify authorization page with explicit consent")
     return RedirectResponse(url, status_code=302)
 
 
@@ -418,9 +476,9 @@ def auth_callback(
     else:
         redirect_uri = _cfg.spotify.redirect_uri
 
-    # Verify state to prevent CSRF attacks
-    if not _last_oauth_state or not state or state != _last_oauth_state:
-        logger.error("OAuth callback: invalid state (CSRF protection)")
+    # Verify state to prevent CSRF attacks (supports concurrent OAuth flows)
+    if not state or state not in _oauth_states:
+        logger.error(f"OAuth callback: invalid or expired state (CSRF protection)")
         html = """
         <!DOCTYPE html>
         <html lang="en">
@@ -448,6 +506,9 @@ def auth_callback(
         </html>
         """
         return HTMLResponse(content=html)
+    
+    # Remove used state to prevent replay attacks
+    del _oauth_states[state]
 
     # Exchange authorization code for tokens (only happens if user approved)
     logger.info("Exchanging authorization code for tokens")
@@ -531,21 +592,45 @@ def auth_callback(
         """
         return HTMLResponse(content=html)
 
-    # Only save tokens if we successfully got them (user approved)
+    # Get user ID to save tokens per-user (supports concurrent users)
     import time
-
-    logger.info("OAuth callback successful, saving tokens")
+    
+    logger.info("OAuth callback successful, fetching user ID")
+    try:
+        me_resp = _oauth_http.get(
+            f"{SPOTIFY_API_BASE_URL}/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+    except httpx.HTTPError as exc:
+        logger.error(f"Failed to fetch user ID: {exc}")
+        raise HTTPException(status_code=502, detail=f"Failed to fetch user ID: {exc}") from exc
+    
+    if not me_resp.is_success:
+        logger.error(f"Failed to fetch user ID: {me_resp.status_code} {me_resp.text}")
+        raise HTTPException(status_code=502, detail=f"Failed to fetch user ID: {me_resp.text}")
+    
+    user_id = me_resp.json().get("id")
+    if not user_id:
+        logger.error("Spotify /me response missing user id")
+        raise HTTPException(status_code=502, detail="Spotify /me response missing user id.")
+    
+    logger.info(f"Saving tokens for user: {user_id}")
     token_data = {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "expires_at": time.time() + expires_in,
         "scope": data.get("scope"),
         "token_type": data.get("token_type"),
+        "user_id": user_id,  # Store user_id with tokens
     }
-    _save_tokens(token_data)
-    _last_oauth_state = None
+    _save_tokens(user_id, token_data)
+    
+    # Create session for this user
+    session_id = secrets.token_urlsafe(32)
+    _sessions[session_id] = user_id
+    logger.info(f"Created session for user: {user_id}")
 
-    # Return success page only after user explicitly approved and tokens are saved
+    # Return success page with session cookie
     html = """
     <!DOCTYPE html>
     <html lang="en">
@@ -581,16 +666,26 @@ def auth_callback(
       </body>
     </html>
     """
-    return HTMLResponse(content=html)
+    response = HTMLResponse(content=html)
+    # Set session cookie (httponly for security, samesite=lax for OAuth callback)
+    response.set_cookie(
+        key="simrai_session",
+        value=session_id,
+        httponly=True,
+        samesite="lax",
+        max_age=86400 * 30,  # 30 days
+    )
+    return response
 
 
 @app.post("/api/search", tags=["spotify"])
-def api_search(body: SearchRequest) -> JSONResponse:
+def api_search(body: SearchRequest, request: Request) -> JSONResponse:
     """
     Proxy to Spotify's search endpoint using the connected user's access token.
     """
     logger.info(f"API search request: query={body.query!r}, type={body.type}, limit={body.limit}")
-    token = _get_user_access_token()
+    user_id = _get_session_user_id(request)
+    token = _get_user_access_token(user_id)
 
     params = {
         "q": body.query,
@@ -620,12 +715,13 @@ def api_search(body: SearchRequest) -> JSONResponse:
 
 
 @app.get("/api/me", response_model=SpotifyUserOut, tags=["spotify"])
-def api_me() -> SpotifyUserOut:
+def api_me(request: Request) -> SpotifyUserOut:
     """
     Return basic profile information for the connected Spotify user.
     """
     logger.debug("API /me endpoint called")
-    token = _get_user_access_token()
+    user_id = _get_session_user_id(request)
+    token = _get_user_access_token(user_id)
 
     try:
         resp = _oauth_http.get(
@@ -657,7 +753,7 @@ def api_me() -> SpotifyUserOut:
 
 
 @app.post("/api/unlink-spotify", response_model=UnlinkSpotifyOut, tags=["spotify"])
-def api_unlink_spotify() -> UnlinkSpotifyOut:
+def api_unlink_spotify(request: Request, response: Response) -> UnlinkSpotifyOut:
     """
     "Unlink" the Spotify account for this SIMRAI instance by deleting stored tokens.
 
@@ -665,25 +761,30 @@ def api_unlink_spotify() -> UnlinkSpotifyOut:
     no longer has access until the user connects again.
     """
     logger.info("Unlinking Spotify account")
-    global _last_oauth_state
-    _last_oauth_state = None
-
-    try:
-        _tokens_path.unlink()  # type: ignore[arg-type]
-        logger.info("Spotify tokens deleted successfully")
-    except FileNotFoundError:
-        logger.debug("No tokens file found to delete")
+    
+    # Get user_id from session
+    session_id = request.cookies.get("simrai_session")
+    if session_id and session_id in _sessions:
+        user_id = _sessions[session_id]
+        _delete_tokens(user_id)
+        del _sessions[session_id]
+        logger.info(f"Spotify tokens deleted for user: {user_id}")
+    
+    # Clear session cookie
+    response.delete_cookie("simrai_session")
 
     return UnlinkSpotifyOut(status="unlinked")
 
 
 @app.post("/api/create-playlist", tags=["spotify"])
-def api_create_playlist(body: CreatePlaylistRequest) -> JSONResponse:
+@limiter.limit("5/minute")  # Max 5 playlist creations per minute per IP
+def api_create_playlist(body: CreatePlaylistRequest, request: Request) -> JSONResponse:
     """
     Create a playlist in the connected user's Spotify account.
     """
     logger.info(f"Creating playlist: name={body.name!r}, description={body.description!r}, public={body.public}")
-    token = _get_user_access_token()
+    user_id = _get_session_user_id(request)
+    token = _get_user_access_token(user_id)
 
     try:
         me_resp = _oauth_http.get(
@@ -746,12 +847,14 @@ def api_create_playlist(body: CreatePlaylistRequest) -> JSONResponse:
 
 
 @app.post("/api/add-tracks", tags=["spotify"])
-def api_add_tracks(body: AddTracksRequest) -> JSONResponse:
+@limiter.limit("10/minute")  # Max 10 track additions per minute per IP
+def api_add_tracks(body: AddTracksRequest, request: Request) -> JSONResponse:
     """
     Add tracks to an existing Spotify playlist for the connected user.
     """
     logger.info(f"Adding {len(body.uris)} tracks to playlist: {body.playlist_id}")
-    token = _get_user_access_token()
+    user_id = _get_session_user_id(request)
+    token = _get_user_access_token(user_id)
 
     if not body.uris:
         logger.warning("Add tracks request with no URIs provided")

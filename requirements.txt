@@ -16,4 +16,7 @@ pyinstaller>=6.0.0
 # LLMs / Groq client (no CrewAI; we call Groq directly from simrai.mood)
 groq>=0.9.0
 
+# Rate limiting
+slowapi>=0.1.9
+
 

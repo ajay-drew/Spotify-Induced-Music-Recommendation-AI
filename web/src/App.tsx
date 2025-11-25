@@ -53,7 +53,9 @@ const App: React.FC = () => {
 
   const fetchSpotifyUser = async () => {
     try {
-      const resp = await fetch(`${API_BASE}/api/me`);
+      const resp = await fetch(`${API_BASE}/api/me`, {
+        credentials: "include",  // Send cookies
+      });
       if (!resp.ok) {
         return;
       }
@@ -67,6 +69,13 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
+      // SECURITY: Validate message origin to prevent XSS attacks
+      const expectedOrigin = new URL(API_BASE).origin;
+      if (event.origin !== expectedOrigin) {
+        console.warn(`Rejected postMessage from untrusted origin: ${event.origin}`);
+        return;
+      }
+
       const payload = event.data as any;
       if (!payload) return;
       if (payload.type === "simrai-spotify-connected") {
@@ -87,11 +96,23 @@ const App: React.FC = () => {
   }, []);
 
   const startSpotifyConnect = () => {
-    window.open(
-      `${API_BASE}/auth/login`,
-      "simrai-spotify-connect",
-      "width=480,height=640"
+    // Show what permissions we're requesting before opening OAuth
+    const confirmed = window.confirm(
+      "SIMRAI would like to connect to your Spotify account.\n\n" +
+      "Permissions requested:\n" +
+      "• Create and modify playlists in your account\n" +
+      "• View your Spotify profile information\n\n" +
+      "You'll be able to choose which Spotify account to use and review these permissions on Spotify's authorization page.\n\n" +
+      "Continue to Spotify?"
     );
+    
+    if (confirmed) {
+      window.open(
+        `${API_BASE}/auth/login`,
+        "simrai-spotify-connect",
+        "width=480,height=640"
+      );
+    }
   };
 
   const handleUnlinkSpotify = async () => {
@@ -99,6 +120,7 @@ const App: React.FC = () => {
       const resp = await fetch(`${API_BASE}/api/unlink-spotify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",  // Send cookies
       });
       if (!resp.ok) {
         throw new Error("Unlink failed");
@@ -143,6 +165,7 @@ const App: React.FC = () => {
       const createResp = await fetch(`${API_BASE}/api/create-playlist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",  // Send cookies
         body: JSON.stringify({
           name,
           description: "Brewed by SIMRAI",
@@ -167,6 +190,7 @@ const App: React.FC = () => {
       const addResp = await fetch(`${API_BASE}/api/add-tracks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",  // Send cookies
         body: JSON.stringify({
           playlist_id: created.playlist_id,
           uris,
@@ -344,7 +368,8 @@ const App: React.FC = () => {
                 type="button"
                 className="btn-secondary"
                 onClick={handleCreatePlaylist}
-                disabled={playlistLoading || !data.tracks.length}
+                disabled={playlistLoading || !data.tracks.length || !spotifyConnected}
+                title={!spotifyConnected ? "Connect your Spotify account first" : ""}
               >
                 {playlistLoading ? "Creating..." : "Create Playlist"}
               </button>
@@ -353,6 +378,11 @@ const App: React.FC = () => {
 
           {error && (
             <p className="text-sm text-cursor-error">{error}</p>
+          )}
+          {!spotifyConnected && data && data.tracks.length > 0 && (
+            <p className="text-sm text-cursor-warning">
+              💡 Connect your Spotify account to export this queue as a playlist
+            </p>
           )}
           {playlistMessage && (
             <p className="text-sm text-muted">
