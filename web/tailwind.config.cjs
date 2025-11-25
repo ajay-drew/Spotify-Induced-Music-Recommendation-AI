@@ -4,24 +4,35 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Cursor-inspired minimal dark theme
+        // Misty, minimal light theme based on provided palette
         cursor: {
-          bg: "#1e1e1e",
-          surface: "#252526",
-          surfaceHover: "#2d2d30",
-          border: "#3e3e42",
-          borderLight: "#464647",
-          text: "#cccccc",
-          textMuted: "#858585",
-          textDim: "#6a6a6a",
-          accent: "#007acc",
-          accentHover: "#0098ff",
-          success: "#4ec9b0",
-          warning: "#dcdcaa",
-          error: "#f48771",
+          bg: "#E8F4F8",           // mist background
+          surface: "#FFFFFF",      // card surfaces
+          surfaceHover: "#F1F7FA", // hover state for cards/buttons
+          border: "#A0DCE8",       // serenity border
+          borderLight: "#A0DCE8",
+          text: "#212529",         // deep gray body
+          textMuted: "#6B7280",    // muted gray
+          textDim: "#9CA3AF",      // dimmer gray
+          headline: "#175E63",     // adjusted deep lagoon for headings
+          accent: "#14C4B8",       // electric teal CTA
+          accentHover: "#00E5D8",  // vivid cyan hover
+          success: "#22C55E",
+          warning: "#EAB308",
+          error: "#EF4444",
         },
       },
       fontFamily: {
+        outfit: [
+          "Outfit",
+          "-apple-system",
+          "BlinkMacSystemFont",
+          "Segoe UI",
+          "Roboto",
+          "Inter",
+          "system-ui",
+          "sans-serif",
+        ],
         sans: [
           "-apple-system",
           "BlinkMacSystemFont",

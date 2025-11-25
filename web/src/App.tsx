@@ -300,7 +300,7 @@ const App: React.FC = () => {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <header className="space-y-1">
-          <h1 className="text-2xl font-semibold text-cursor-text">
+          <h1 className="text-2xl font-semibold text-cursor-headline font-outfit">
             SIMRAI
           </h1>
           <p className="text-sm text-muted">
@@ -396,10 +396,7 @@ const App: React.FC = () => {
                   <span>Brewing...</span>
                 </>
               ) : (
-                <>
-                  <span aria-hidden="true">🎼</span>
-                  <span>Brew Queue</span>
-                </>
+                <span>Brew Queue</span>
               )}
             </button>
             {data && (
