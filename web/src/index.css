@@ -28,12 +28,16 @@
   .text-dim {
     @apply text-cursor-textDim;
   }
+
+  .animate-music-note {
+    animation: music-bounce 0.9s ease-in-out infinite;
+  }
 }
 
 @layer components {
   .btn-primary {
-    @apply px-4 py-2 bg-cursor-accent text-white rounded-md text-sm font-medium;
-    @apply hover:bg-cursor-accentHover transition-colors;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 bg-cursor-accent text-white rounded-md text-sm font-medium;
+    @apply hover:bg-cursor-accentHover transition-colors shadow-md;
     @apply focus:outline-none focus:ring-2 focus:ring-cursor-accent focus:ring-offset-2 focus:ring-offset-cursor-bg;
     @apply disabled:opacity-50 disabled:cursor-not-allowed;
   }
@@ -53,6 +57,17 @@
   }
 
   .card {
-    @apply bg-cursor-surface border border-cursor-border rounded-lg p-4;
+    @apply bg-cursor-surface/70 border border-cursor-border/60 rounded-xl p-5 shadow-lg backdrop-blur-md;
+  }
+}
+
+@keyframes music-bounce {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 0.85;
   }
 }

@@ -48,6 +48,7 @@ const App: React.FC = () => {
   const [showConnectedToast, setShowConnectedToast] = useState(false);
   const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [showColdStartHint, setShowColdStartHint] = useState(true);
 
   const metadataOnly = !!data && data.summary.includes("Audio features endpoint is unavailable");
 
@@ -240,12 +241,14 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-cursor-bg text-cursor-text p-8">
+    <div className="min-h-screen bg-cursor-bg text-cursor-text p-6 sm:p-8">
       {/* Profile menu */}
       <div className="fixed top-4 right-4 z-30">
         <button
           type="button"
-          className="flex items-center gap-2 px-3 py-1.5 bg-cursor-surface hover:bg-cursor-surfaceHover border border-cursor-border rounded-md text-sm transition-colors"
+          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm shadow-lg backdrop-blur-lg bg-cursor-surface/80 border transition-colors ${
+            spotifyConnected ? "border-cursor-success" : "border-cursor-border"
+          }`}
           onClick={() => setProfileOpen((open) => !open)}
         >
           {spotifyUser?.avatar_url ? (
@@ -257,12 +260,15 @@ const App: React.FC = () => {
           ) : (
             <span className="text-cursor-textMuted">👤</span>
           )}
-          <span className="text-sm">
+          <span className="text-xs sm:text-sm">
             {spotifyConnected && spotifyUser?.display_name
               ? spotifyUser.display_name
               : "Not connected"}
           </span>
-          <span className="text-cursor-textMuted">▾</span>
+          <span className="text-cursor-success text-xs" aria-hidden="true">
+            {spotifyConnected ? "●" : ""}
+          </span>
+          <span className="text-cursor-textMuted text-xs">▾</span>
         </button>
 
         {profileOpen && (
@@ -308,6 +314,27 @@ const App: React.FC = () => {
             </p>
           )}
         </header>
+
+        {/* Cold start hint for hosted API */}
+        {showColdStartHint && (
+          <div className="card flex items-start justify-between gap-3 py-2 px-3">
+            <div className="flex items-start gap-2 text-xs sm:text-sm text-muted">
+              <span className="mt-0.5" aria-hidden="true">⏳</span>
+              <span>
+                Hosted on a free tier – the first request after a while may take ~20–60 seconds
+                while the server wakes up. If it feels slow, give it a moment and try again.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowColdStartHint(false)}
+              className="text-cursor-textMuted text-xs hover:text-cursor-text"
+              aria-label="Dismiss cold start notice"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="card space-y-4">
@@ -361,7 +388,19 @@ const App: React.FC = () => {
               className="btn-primary"
               disabled={loading}
             >
-              {loading ? "Generating..." : "Generate Queue"}
+              {loading ? (
+                <>
+                  <span className="animate-music-note" aria-hidden="true">
+                    🎵
+                  </span>
+                  <span>Brewing...</span>
+                </>
+              ) : (
+                <>
+                  <span aria-hidden="true">🎼</span>
+                  <span>Brew Queue</span>
+                </>
+              )}
             </button>
             {data && (
               <button
@@ -453,7 +492,7 @@ const App: React.FC = () => {
                   {data.tracks.map((t, idx) => (
                     <tr
                       key={t.uri}
-                      className={`border-b border-cursor-border hover:bg-cursor-surfaceHover transition-colors ${
+                      className={`group border-b border-cursor-border hover:bg-cursor-surfaceHover transition-colors ${
                         idx % 2 === 0 ? "" : "bg-cursor-surface/30"
                       }`}
                     >
@@ -463,13 +502,29 @@ const App: React.FC = () => {
                       <td className="py-3 pr-4">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs">{t.valence.toFixed(2)}</span>
-                          <span className="text-xs text-muted font-mono">{bar(t.valence, 8)}</span>
+                          <div className="h-1.5 w-16 rounded-full bg-cursor-surface/40 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all duration-500"
+                              style={{ width: `${Math.max(4, Math.round(t.valence * 100))}%` }}
+                            />
+                          </div>
+                          <span className="text-xs" aria-hidden="true">
+                            {t.valence >= 0.66 ? "😊" : t.valence <= 0.33 ? "😔" : "😐"}
+                          </span>
                         </div>
                       </td>
                       <td className="py-3 pr-4">
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-xs">{t.energy.toFixed(2)}</span>
-                          <span className="text-xs text-muted font-mono">{bar(t.energy, 8)}</span>
+                          <div className="h-1.5 w-16 rounded-full bg-cursor-surface/40 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-sky-400 to-indigo-600 transition-all duration-500"
+                              style={{ width: `${Math.max(4, Math.round(t.energy * 100))}%` }}
+                            />
+                          </div>
+                          <span className="text-xs" aria-hidden="true">
+                            {t.energy >= 0.66 ? "⚡" : t.energy <= 0.33 ? "🌙" : "🎧"}
+                          </span>
                         </div>
                       </td>
                       <td className="py-3 pr-4 hidden sm:table-cell">
@@ -477,9 +532,15 @@ const App: React.FC = () => {
                           href={t.uri}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-cursor-accent hover:text-cursor-accentHover text-xs underline"
+                          className="inline-flex items-center gap-1 text-cursor-accent hover:text-cursor-accentHover text-xs underline"
                         >
-                          open
+                          <span>Open</span>
+                          <span
+                            className="opacity-0 group-hover:opacity-100 transition-opacity"
+                            aria-hidden="true"
+                          >
+                            ↗
+                          </span>
                         </a>
                       </td>
                     </tr>
