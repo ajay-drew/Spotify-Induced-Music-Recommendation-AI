@@ -247,4 +247,13 @@ Protect `main` by requiring these checks to pass before merging.
 - **License**: See `LICENSE`.
 - **Contributions**: Issues and PRs are welcome – especially around new mood heuristics, better metadata scoring, or UX improvements to the web UI.
 
+---
+
+## Done By
+
+**Ajay A**
+
+- **Email**: [drewjay05@gmail.com](mailto:drewjay05@gmail.com)
+- **LinkedIn**: [https://www.linkedin.com/in/ajay-drew/](https://www.linkedin.com/in/ajay-drew/)
+
 
