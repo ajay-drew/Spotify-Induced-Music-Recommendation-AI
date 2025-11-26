@@ -241,7 +241,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-cursor-bg text-cursor-text p-6 sm:p-8">
+    <div className="min-h-screen bg-cursor-bg text-cursor-text p-6 sm:p-8 pb-20">
       {/* Profile menu */}
       <div className="fixed top-4 right-4 z-30">
         <button
@@ -547,6 +547,23 @@ const App: React.FC = () => {
             </div>
           </section>
         )}
+      </div>
+
+      {/* Done by section - center bottom */}
+      <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2">
+        <div className="card flex items-center gap-4 px-4 py-2 text-xs sm:text-sm">
+          <div>
+            <a href="https://www.linkedin.com/in/ajay-drew/" target="_blank" rel="noreferrer" className="text-cursor-accent hover:text-cursor-accentHover underline">
+              https://www.linkedin.com/in/ajay-drew/
+            </a>
+          </div>
+          <div className="flex-1 text-center text-cursor-textMuted">Ajay A</div>
+          <div>
+            <a href="mailto:drewjay05@gmail.com" className="text-cursor-accent hover:text-cursor-accentHover underline">
+              drewjay05@gmail.com
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );
