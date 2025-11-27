@@ -169,6 +169,10 @@ run_cli.cmd    # Runs CLI mode only
 
 ---
 
+## Architecture
+
+For a detailed production-grade system architecture diagram with data flows, security layers, and deployment infrastructure, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ## How It Works
 
 1. **Mood Interpretation**
