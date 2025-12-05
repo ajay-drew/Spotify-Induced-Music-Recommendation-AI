@@ -6,6 +6,7 @@ type Track = {
   uri: string;
   valence: number;
   energy: number;
+  duration_ms?: number;
 };
 
 type QueueResponse = {
@@ -289,11 +290,13 @@ const App: React.FC = () => {
               className="h-5 w-5 rounded-full object-cover"
             />
           ) : (
-            <span className="text-cursor-textMuted">👤</span>
+            <span className="text-cursor-textMuted">
+              {spotifyConnected ? "🎧" : "👤"}
+            </span>
           )}
           <span className="text-xs sm:text-sm">
-            {spotifyConnected && spotifyUser?.display_name
-              ? spotifyUser.display_name
+            {spotifyConnected
+              ? spotifyUser?.display_name ?? "Connected"
               : "Not connected"}
           </span>
           <span className="text-cursor-success text-xs" aria-hidden="true">
@@ -349,11 +352,6 @@ const App: React.FC = () => {
               ? `Mood: "${mood.trim().slice(0, 40)}${mood.trim().length > 40 ? "…" : ""}"`
               : "Describe your mood to generate a music queue"}
           </p>
-          {data && (
-            <p className="text-xs text-dim font-mono">
-              Valence: {data.mood_vector.valence.toFixed(2)} · Energy: {data.mood_vector.energy.toFixed(2)}
-            </p>
-          )}
         </header>
 
         {/* Cold start hint for hosted API */}
@@ -399,7 +397,7 @@ const App: React.FC = () => {
                     className={`px-2 py-1 ${mode === "count" ? "bg-cursor-accent text-white" : "bg-cursor-surface text-cursor-text"}`}
                     onClick={() => setMode("count")}
                   >
-                    # Tracks
+                    Tracks
                   </button>
                   <button
                     type="button"
@@ -441,9 +439,6 @@ const App: React.FC = () => {
                     onChange={(e) => setDurationIndex(Number(e.target.value))}
                     className="w-full"
                   />
-                  <p className="text-xs text-muted">
-                    Options: 5, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180 minutes
-                  </p>
                 </div>
               )}
             </div>
@@ -531,22 +526,33 @@ const App: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <h2 className="text-lg font-semibold">Queue</h2>
-                <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  metadataOnly
-                    ? "bg-cursor-warning/20 text-cursor-warning"
-                    : "bg-cursor-success/20 text-cursor-success"
-                }`}>
+                <span
+                  className={`px-2 py-0.5 rounded text-xs font-medium ${
+                    metadataOnly
+                      ? "bg-cursor-warning/20 text-cursor-warning"
+                      : "bg-cursor-success/20 text-cursor-success"
+                  }`}
+                >
                   {metadataOnly ? "Metadata Only" : "Full Features"}
                 </span>
               </div>
-              <p className="text-sm text-muted max-w-md text-right">
-                {data.summary}
-              </p>
             </div>
 
             <div className="flex items-center justify-between text-sm text-muted">
               <span>
-                {data.tracks.length} tracks · Valence: {data.mood_vector.valence.toFixed(2)} · Energy: {data.mood_vector.energy.toFixed(2)}
+                {data.tracks.length} tracks · Valence:{" "}
+                {data.mood_vector.valence.toFixed(2)} · Energy:{" "}
+                {data.mood_vector.energy.toFixed(2)}
+                {(() => {
+                  const totalMs = data.tracks.reduce(
+                    (sum, t) => sum + (t.duration_ms ?? 0),
+                    0
+                  );
+                  const totalMin = totalMs / 60000;
+                  return totalMs > 0
+                    ? ` · Total duration: ${totalMin.toFixed(1)} min`
+                    : "";
+                })()}
               </span>
               <button
                 type="button"

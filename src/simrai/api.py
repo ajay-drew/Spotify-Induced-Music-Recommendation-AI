@@ -96,6 +96,7 @@ class QueueTrackOut(BaseModel):
     uri: str
     valence: float
     energy: float
+    duration_ms: Optional[int] = None
 
 
 class MoodVectorOut(BaseModel):
@@ -172,6 +173,7 @@ def create_queue(body: QueueRequest, request: Request) -> QueueResponse:
             uri=t.uri,
             valence=t.valence,
             energy=t.energy,
+            duration_ms=t.duration_ms,
         )
         for t in result.tracks
     ]
@@ -692,12 +694,21 @@ def auth_callback(
     </html>
     """
     response = HTMLResponse(content=html)
-    # Set session cookie (httponly for security, samesite=lax for OAuth callback)
+    # Set session cookie.
+    # - In local/dev (default), we use SameSite=Lax and no Secure flag so it works on http://localhost.
+    # - On Render (RENDER env var is set), the API and web are on different origins,
+    #   so we must use SameSite=None and Secure=True for the cookie to be sent with
+    #   cross-site XHR/fetch requests (required for /api/me, /api/create-playlist, etc.).
+    is_render = bool(os.getenv("RENDER"))
+    cookie_samesite = "none" if is_render else "lax"
+    cookie_secure = True if is_render else False
+
     response.set_cookie(
         key="simrai_session",
         value=session_id,
         httponly=True,
-        samesite="lax",
+        samesite=cookie_samesite,
+        secure=cookie_secure,
         max_age=86400 * 30,  # 30 days
     )
     return response
