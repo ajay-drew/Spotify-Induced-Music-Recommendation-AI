@@ -3,6 +3,42 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light theme (default) */
+  :root {
+    --cursor-bg: #E8F4F8;
+    --cursor-surface: #FFFFFF;
+    --cursor-surface-hover: #F1F7FA;
+    --cursor-border: #A0DCE8;
+    --cursor-border-light: #A0DCE8;
+    --cursor-text: #212529;
+    --cursor-text-muted: #6B7280;
+    --cursor-text-dim: #9CA3AF;
+    --cursor-headline: #175E63;
+    --cursor-accent: #14C4B8;
+    --cursor-accent-hover: #00E5D8;
+    --cursor-success: #22C55E;
+    --cursor-warning: #EAB308;
+    --cursor-error: #EF4444;
+  }
+
+  /* Dark theme */
+  .theme-dark {
+    --cursor-bg: #0f172a;
+    --cursor-surface: #1e293b;
+    --cursor-surface-hover: #273449;
+    --cursor-border: #334155;
+    --cursor-border-light: #475569;
+    --cursor-text: #e2e8f0;
+    --cursor-text-muted: #94a3b8;
+    --cursor-text-dim: #cbd5e1;
+    --cursor-headline: #a5f3fc;
+    --cursor-accent: #22d3ee;
+    --cursor-accent-hover: #38bdf8;
+    --cursor-success: #34d399;
+    --cursor-warning: #fbbf24;
+    --cursor-error: #f87171;
+  }
+
   html,
   body {
     @apply h-full antialiased;
@@ -57,7 +93,7 @@
   }
 
   .card {
-    @apply bg-cursor-surface/70 border border-cursor-border/60 rounded-xl p-5 shadow-lg backdrop-blur-md;
+    @apply bg-cursor-surface bg-opacity-70 border border-cursor-border border-opacity-60 rounded-xl p-5 shadow-lg backdrop-blur-md;
   }
 }
 

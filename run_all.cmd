@@ -6,12 +6,19 @@ rem
 rem Requirements (one-time):
 rem   - In this repo:    pip install -e .
 rem   - In .\web folder: npm install
+rem   - Recommended: create a venv at .\venv (auto-activated if present)
 
 cd /d "%~dp0"
 
 echo.
 echo SIMRAI :: starting backend on http://localhost:8000 ...
-start "SIMRAI Backend" cmd /c "simrai serve --host 0.0.0.0 --port 8000"
+if exist "venv\Scripts\activate.bat" (
+  echo Using local venv at .\venv
+  start "SIMRAI Backend" cmd /c "call venv\Scripts\activate.bat && simrai serve --host 0.0.0.0 --port 8000"
+) else (
+  echo No venv found at .\venv — falling back to global Python
+  start "SIMRAI Backend" cmd /c "simrai serve --host 0.0.0.0 --port 8000"
+)
 
 echo.
 echo SIMRAI :: starting web UI on http://localhost:5658 ...

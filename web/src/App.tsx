@@ -49,6 +49,12 @@ const App: React.FC = () => {
   const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [showColdStartHint, setShowColdStartHint] = useState(true);
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    const stored = localStorage.getItem("simrai-theme");
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  });
 
   const metadataOnly = !!data && data.summary.includes("Audio features endpoint is unavailable");
 
@@ -95,6 +101,16 @@ const App: React.FC = () => {
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, []);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === "dark") {
+      root.classList.add("theme-dark");
+    } else {
+      root.classList.remove("theme-dark");
+    }
+    localStorage.setItem("simrai-theme", theme);
+  }, [theme]);
 
   const startSpotifyConnect = () => {
     // Show what permissions we're requesting before opening OAuth
@@ -300,9 +316,19 @@ const App: React.FC = () => {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <header className="space-y-1">
-          <h1 className="text-2xl font-semibold text-cursor-headline font-outfit">
-            SIMRAI
-          </h1>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-2xl font-semibold text-cursor-headline font-outfit">
+              SIMRAI
+            </h1>
+            <button
+              type="button"
+              className="btn-secondary text-xs sm:text-sm"
+              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+              aria-label="Toggle color theme"
+            >
+              {theme === "dark" ? "🌙 Dark" : "🌞 Light"}
+            </button>
+          </div>
           <p className="text-sm text-muted">
             {mood.trim()
               ? `Mood: "${mood.trim().slice(0, 40)}${mood.trim().length > 40 ? "…" : ""}"`

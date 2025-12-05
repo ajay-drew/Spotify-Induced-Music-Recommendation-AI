@@ -4,22 +4,22 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Misty, minimal light theme based on provided palette
+        // Themeable color tokens (light/dark via CSS variables in index.css)
         cursor: {
-          bg: "#E8F4F8",           // mist background
-          surface: "#FFFFFF",      // card surfaces
-          surfaceHover: "#F1F7FA", // hover state for cards/buttons
-          border: "#A0DCE8",       // serenity border
-          borderLight: "#A0DCE8",
-          text: "#212529",         // deep gray body
-          textMuted: "#6B7280",    // muted gray
-          textDim: "#9CA3AF",      // dimmer gray
-          headline: "#175E63",     // adjusted deep lagoon for headings
-          accent: "#14C4B8",       // electric teal CTA
-          accentHover: "#00E5D8",  // vivid cyan hover
-          success: "#22C55E",
-          warning: "#EAB308",
-          error: "#EF4444",
+          bg: "var(--cursor-bg)",
+          surface: "var(--cursor-surface)",
+          surfaceHover: "var(--cursor-surface-hover)",
+          border: "var(--cursor-border)",
+          borderLight: "var(--cursor-border-light)",
+          text: "var(--cursor-text)",
+          textMuted: "var(--cursor-text-muted)",
+          textDim: "var(--cursor-text-dim)",
+          headline: "var(--cursor-headline)",
+          accent: "var(--cursor-accent)",
+          accentHover: "var(--cursor-accent-hover)",
+          success: "var(--cursor-success)",
+          warning: "var(--cursor-warning)",
+          error: "var(--cursor-error)",
         },
       },
       fontFamily: {
