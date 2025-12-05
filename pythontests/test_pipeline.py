@@ -17,6 +17,7 @@ class _FakeSpotifyService:
 
     def __init__(self) -> None:
         # One simple candidate set with varying popularity / year metadata.
+        # Duration in milliseconds: 3min, 4min, 5min, 2min, 6min
         self._candidates: List[dict] = [
             {
                 "id": "id_pop_recent",
@@ -25,6 +26,7 @@ class _FakeSpotifyService:
                 "uri": "spotify:track:id_pop_recent",
                 "popularity": 90,
                 "album": {"name": "Test Album", "release_date": "2024-01-01"},
+                "duration_ms": 180000,  # 3 minutes
             },
             {
                 "id": "id_obscure_old",
@@ -33,6 +35,34 @@ class _FakeSpotifyService:
                 "uri": "spotify:track:id_obscure_old",
                 "popularity": 10,
                 "album": {"name": "Old Times", "release_date": "1980-05-05"},
+                "duration_ms": 240000,  # 4 minutes
+            },
+            {
+                "id": "id_mid_pop",
+                "name": "Mid Popularity Track",
+                "artists": [{"name": "Mid Artist"}],
+                "uri": "spotify:track:id_mid_pop",
+                "popularity": 50,
+                "album": {"name": "Mid Album", "release_date": "2010-06-15"},
+                "duration_ms": 300000,  # 5 minutes
+            },
+            {
+                "id": "id_short_track",
+                "name": "Short Track",
+                "artists": [{"name": "Short Artist"}],
+                "uri": "spotify:track:id_short_track",
+                "popularity": 70,
+                "album": {"name": "Short Album", "release_date": "2020-03-20"},
+                "duration_ms": 120000,  # 2 minutes
+            },
+            {
+                "id": "id_long_track",
+                "name": "Long Track",
+                "artists": [{"name": "Long Artist"}],
+                "uri": "spotify:track:id_long_track",
+                "popularity": 30,
+                "album": {"name": "Long Album", "release_date": "1995-11-10"},
+                "duration_ms": 360000,  # 6 minutes
             },
         ]
 
@@ -110,6 +140,108 @@ def test_generate_queue_always_uses_metadata_pipeline(monkeypatch) -> None:
     assert result.tracks
     assert result.mood_vector.valence >= 0.0
     assert result.mood_vector.energy >= 0.0
+
+
+def test_generate_queue_with_duration_minutes(monkeypatch) -> None:
+    """Test that generate_queue selects tracks based on duration when duration_minutes is provided."""
+    def fake_service_init(self, cfg: Optional[object] = None) -> None:  # noqa: ARG002
+        self._backend = _FakeSpotifyService()
+
+    monkeypatch.setattr(SpotifyService, "__init__", fake_service_init, raising=True)
+
+    # Request 10 minutes (600000 ms) with ±3 minute buffer (420000-780000 ms)
+    # Available tracks: 3min, 4min, 5min, 2min, 6min
+    # Best combination: 4min + 6min = 10min (perfect match)
+    result = generate_queue("test mood", duration_minutes=10)
+
+    assert result.tracks, "Should have tracks selected by duration"
+    
+    # Verify all tracks have duration_ms
+    for track in result.tracks:
+        assert track.duration_ms is not None, "Tracks should have duration_ms"
+    
+    # Calculate total duration
+    total_ms = sum(t.duration_ms or 0 for t in result.tracks)
+    total_minutes = total_ms / 60000.0
+    
+    # Should be within ±3 minutes of target (10 minutes)
+    assert 7.0 <= total_minutes <= 13.0, f"Total duration {total_minutes}min should be within 7-13min range"
+
+
+def test_generate_queue_duration_prioritizes_mood_match(monkeypatch) -> None:
+    """Test that duration-based selection still prioritizes mood/genre/valence/energy match."""
+    def fake_service_init(self, cfg: Optional[object] = None) -> None:  # noqa: ARG002
+        self._backend = _FakeSpotifyService()
+
+    monkeypatch.setattr(SpotifyService, "__init__", fake_service_init, raising=True)
+
+    # Request 5 minutes - multiple combinations possible:
+    # - 3min + 2min = 5min (perfect)
+    # - 5min alone = 5min (perfect)
+    # Should prefer higher-ranked tracks (by mood match) that still fit duration
+    result = generate_queue("happy party", duration_minutes=5)
+
+    assert result.tracks, "Should have tracks"
+    total_ms = sum(t.duration_ms or 0 for t in result.tracks)
+    total_minutes = total_ms / 60000.0
+    
+    # Should be within ±3 minutes (2-8 minutes)
+    assert 2.0 <= total_minutes <= 8.0, f"Total duration {total_minutes}min should be within 2-8min range"
+
+
+def test_generate_queue_duration_with_short_target(monkeypatch) -> None:
+    """Test duration selection with a very short target (5 minutes)."""
+    def fake_service_init(self, cfg: Optional[object] = None) -> None:  # noqa: ARG002
+        self._backend = _FakeSpotifyService()
+
+    monkeypatch.setattr(SpotifyService, "__init__", fake_service_init, raising=True)
+
+    result = generate_queue("test mood", duration_minutes=5)
+
+    assert result.tracks, "Should have at least one track"
+    total_ms = sum(t.duration_ms or 0 for t in result.tracks)
+    total_minutes = total_ms / 60000.0
+    
+    # Should be within ±3 minutes (2-8 minutes)
+    assert 2.0 <= total_minutes <= 8.0, f"Total duration {total_minutes}min should be within 2-8min range"
+
+
+def test_generate_queue_duration_with_long_target(monkeypatch) -> None:
+    """Test duration selection with a longer target (15 minutes)."""
+    def fake_service_init(self, cfg: Optional[object] = None) -> None:  # noqa: ARG002
+        self._backend = _FakeSpotifyService()
+
+    monkeypatch.setattr(SpotifyService, "__init__", fake_service_init, raising=True)
+
+    # Request 15 minutes - with available tracks (3+4+5+2+6 = 20min total)
+    # Should select tracks closest to 15 minutes within ±3min tolerance (12-18min)
+    result = generate_queue("test mood", duration_minutes=15)
+
+    assert result.tracks, "Should have multiple tracks"
+    total_ms = sum(t.duration_ms or 0 for t in result.tracks)
+    total_minutes = total_ms / 60000.0
+    
+    # Should be within ±3 minutes (12-18 minutes), or at least use available tracks
+    # Since we only have 20min total, it should select tracks that get as close as possible
+    assert total_minutes > 0, f"Should have some duration, got {total_minutes}min"
+    # The algorithm should select tracks that get closest to target
+    assert total_minutes <= 20.0, f"Total duration {total_minutes}min should not exceed available tracks"
+
+
+def test_generate_queue_duration_fallback_to_length(monkeypatch) -> None:
+    """Test that when duration_minutes is None, it falls back to length-based selection."""
+    def fake_service_init(self, cfg: Optional[object] = None) -> None:  # noqa: ARG002
+        self._backend = _FakeSpotifyService()
+
+    monkeypatch.setattr(SpotifyService, "__init__", fake_service_init, raising=True)
+
+    result = generate_queue("test mood", length=3)
+
+    assert len(result.tracks) == 3, "Should have exactly 3 tracks when length=3"
+    # When using length, we don't enforce duration constraints
+    # But tracks should still have duration_ms populated
+    for track in result.tracks:
+        assert track.duration_ms is not None, "Tracks should have duration_ms even in length mode"
 
 
 

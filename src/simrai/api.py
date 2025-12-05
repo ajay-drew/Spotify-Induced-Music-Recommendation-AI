@@ -84,6 +84,7 @@ app.add_middleware(
 class QueueRequest(BaseModel):
     mood: str
     length: int = 12
+    duration_minutes: Optional[int] = None
     intense: bool = False
     soft: bool = False
 
@@ -117,15 +118,31 @@ def health() -> dict:
 @limiter.limit("10/minute")  # Max 10 queue generations per minute per IP
 @app.post("/queue", response_model=QueueResponse, tags=["queue"])
 def create_queue(body: QueueRequest, request: Request) -> QueueResponse:
-    logger.info(f"API queue request: mood={body.mood!r}, length={body.length}, intense={body.intense}, soft={body.soft}")
+    logger.info(
+        "API queue request: mood=%r, length=%s, duration=%s, intense=%s, soft=%s",
+        body.mood,
+        body.length,
+        body.duration_minutes,
+        body.intense,
+        body.soft,
+    )
     try:
         # generate_queue automatically tries AI if available, falls back to rule-based
-        result: QueueResult = generate_queue(
-            body.mood,
-            length=body.length,
-            intense=body.intense,
-            soft=body.soft,
-        )
+        # When duration_minutes is provided, don't pass length to ensure independence
+        if body.duration_minutes and body.duration_minutes > 0:
+            result: QueueResult = generate_queue(
+                body.mood,
+                duration_minutes=body.duration_minutes,
+                intense=body.intense,
+                soft=body.soft,
+            )
+        else:
+            result: QueueResult = generate_queue(
+                body.mood,
+                length=body.length,
+                intense=body.intense,
+                soft=body.soft,
+            )
         logger.info(f"API queue generated: {len(result.tracks)} tracks")
     except SpotifyError as exc:
         logger.error(f"Spotify error in API queue endpoint: {exc}")

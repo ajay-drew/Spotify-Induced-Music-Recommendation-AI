@@ -35,6 +35,9 @@ function bar(value: number, width = 10): string {
 const App: React.FC = () => {
   const [mood, setMood] = useState("");
   const [length, setLength] = useState(12);
+  const durationOptions = [5, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180];
+  const [durationIndex, setDurationIndex] = useState(2); // default 15 min
+  const [mode, setMode] = useState<"count" | "duration">("duration");
   const [intense, setIntense] = useState(false);
   const [soft, setSoft] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -238,10 +241,22 @@ const App: React.FC = () => {
     setLoading(true);
     setCopied(false);
     try {
+      const body: any = {
+        mood,
+        intense,
+        soft,
+      };
+      // Send only duration_minutes OR length (not both) to ensure independence
+      if (mode === "duration") {
+        body.duration_minutes = durationOptions[durationIndex];
+        // Don't send length when in duration mode - they should be independent
+      } else {
+        body.length = length;
+      }
       const resp = await fetch(`${API_BASE}/queue`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mood, length, intense, soft }),
+        body: JSON.stringify(body),
       });
       if (!resp.ok) {
         const text = await resp.text();
@@ -375,18 +390,62 @@ const App: React.FC = () => {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                Length: {length} tracks
-              </label>
-              <input
-                type="range"
-                min={8}
-                max={30}
-                value={length}
-                onChange={(e) => setLength(Number(e.target.value))}
-                className="w-full"
-              />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium">Selection Mode</span>
+                <div className="flex rounded-md border border-cursor-border overflow-hidden text-xs">
+                  <button
+                    type="button"
+                    className={`px-2 py-1 ${mode === "count" ? "bg-cursor-accent text-white" : "bg-cursor-surface text-cursor-text"}`}
+                    onClick={() => setMode("count")}
+                  >
+                    # Tracks
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-2 py-1 ${mode === "duration" ? "bg-cursor-accent text-white" : "bg-cursor-surface text-cursor-text"}`}
+                    onClick={() => setMode("duration")}
+                  >
+                    Duration
+                  </button>
+                </div>
+              </div>
+
+              {mode === "count" ? (
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Tracks: {length}
+                  </label>
+                  <input
+                    type="range"
+                    min={8}
+                    max={30}
+                    value={length}
+                    onChange={(e) => setLength(Number(e.target.value))}
+                    className="w-full"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Duration: {durationOptions[durationIndex] >= 60
+                      ? `${durationOptions[durationIndex] / 60} hr${durationOptions[durationIndex] >= 120 ? "s" : ""}`
+                      : `${durationOptions[durationIndex]} min`}
+                  </label>
+                  <input
+                    type="range"
+                    min={0}
+                    max={durationOptions.length - 1}
+                    step={1}
+                    value={durationIndex}
+                    onChange={(e) => setDurationIndex(Number(e.target.value))}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-muted">
+                    Options: 5, 10, 15, 20, 30, 45, 60, 90, 120, 150, 180 minutes
+                  </p>
+                </div>
+              )}
             </div>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input
