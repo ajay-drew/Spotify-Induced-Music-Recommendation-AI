@@ -96,10 +96,15 @@ SIMRAI_LOG_LEVEL=INFO
 
 In your **Spotify Developer Dashboard** app settings:
 
-- Add this redirect URI:
-  - `http://localhost:8000/auth/callback`
+- Add these redirect URIs:
+  - **For local development:** `http://localhost:8000/auth/callback`
+  - **For Render production:** `https://simrai-api.onrender.com/auth/callback`
 
-SIMRAI’s backend always uses this callback; Spotify Dev is the single source of truth for redirect URIs.
+**Important:** 
+- The redirect URI in your Spotify app settings must match EXACTLY what's in the code
+- For localhost, you can use either `localhost` or `127.0.0.1` (both work)
+- For production on Render, you MUST use HTTPS and the exact Render URL
+- Make sure there are no trailing slashes or typos
 
 ### 3. CLI Mode
 

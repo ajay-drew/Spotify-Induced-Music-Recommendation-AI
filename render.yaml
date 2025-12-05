@@ -17,6 +17,8 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      - key: SIMRAI_SPOTIFY_REDIRECT_URI
+        value: https://simrai-api.onrender.com/auth/callback
       - key: SIMRAI_LOG_LEVEL
         value: INFO
 

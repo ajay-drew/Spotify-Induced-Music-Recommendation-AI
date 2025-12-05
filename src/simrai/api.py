@@ -32,6 +32,7 @@ Exposes a simple JSON API:
 from __future__ import annotations
 
 import logging
+import os
 from typing import List, Optional
 
 import httpx
@@ -366,7 +367,8 @@ def auth_login() -> RedirectResponse:
     client_id = _cfg.spotify.client_id
     # Redirect URI is managed in the Spotify Developer dashboard; SIMRAI always
     # uses the standard local callback path.
-    redirect_uri = "http://localhost:8000/auth/callback"
+    # Default to localhost (can be overridden via SIMRAI_SPOTIFY_REDIRECT_URI env var)
+    redirect_uri = os.getenv("SIMRAI_SPOTIFY_REDIRECT_URI", "http://localhost:8000/auth/callback")
 
     if not client_id:
         logger.error("OAuth login failed: SIMRAI_SPOTIFY_CLIENT_ID not set")
@@ -529,9 +531,9 @@ def auth_callback(
             detail="Spotify client ID/secret are not configured.",
         )
 
-    # Redirect URI is fixed; the Spotify Developer dashboard must be configured
-    # with the same value for this app.
-    redirect_uri = "http://localhost:8000/auth/callback"
+    # Redirect URI must match what's configured in Spotify Developer Dashboard
+    # Default to localhost (can be overridden via SIMRAI_SPOTIFY_REDIRECT_URI env var)
+    redirect_uri = os.getenv("SIMRAI_SPOTIFY_REDIRECT_URI", "http://localhost:8000/auth/callback")
 
     # Exchange authorization code for tokens (only happens if user approved)
     logger.info("Exchanging authorization code for tokens")

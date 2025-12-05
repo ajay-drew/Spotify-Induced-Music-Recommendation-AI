@@ -25,7 +25,11 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
-      - name: Run pytest with coverage
+      - name: Run backend tests (API, pipeline, Spotify)
+        run: |
+          pytest pythontests/test_api.py pythontests/test_pipeline.py pythontests/test_spotify.py -v
+
+      - name: Run full pytest suite with coverage
         run: |
           pytest pythontests --cov=src/simrai --cov-report=term-missing --cov-report=xml --cov-fail-under=70
 
