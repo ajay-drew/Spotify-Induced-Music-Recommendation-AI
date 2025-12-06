@@ -73,11 +73,23 @@ const App: React.FC = () => {
 
   const metadataOnly = !!data && data.summary.includes("Audio features endpoint is unavailable");
 
-  const fetchSpotifyUser = async () => {
+  // When we already have a stored session (e.g., page refresh after connect),
+  // automatically fetch the Spotify profile so avatar/name show up.
+  useEffect(() => {
+    if (!sessionId) return;
+    fetchSpotifyUser(sessionId);
+  }, [sessionId]);
+
+  const fetchSpotifyUser = async (overrideSessionId?: string) => {
     try {
+      const sid = overrideSessionId ?? sessionId;
+      const headers: Record<string, string> = {};
+      if (sid) {
+        headers["X-Simrai-Session"] = sid;
+      }
       const resp = await fetch(`${API_BASE}/api/me`, {
         credentials: "include",  // Send cookies when available
-        headers: sessionId ? { "X-Simrai-Session": sessionId } : undefined,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
       });
       if (!resp.ok) {
         return;
@@ -112,7 +124,9 @@ const App: React.FC = () => {
       const payload = event.data as any;
       if (!payload) return;
       if (payload.type === "simrai-spotify-connected") {
+        let newSessionId: string | null = null;
         if (payload.sessionId && typeof payload.sessionId === "string") {
+          newSessionId = payload.sessionId;
           setSessionId(payload.sessionId);
           try {
             localStorage.setItem("simrai-session-id", payload.sessionId);
@@ -124,7 +138,8 @@ const App: React.FC = () => {
         setPlaylistMessage("Spotify is connected. You can now create playlists.");
         setShowConnectedToast(true);
         setTimeout(() => setShowConnectedToast(false), 2500);
-        fetchSpotifyUser();
+        // Use the fresh session id immediately so prod doesn't depend on cookies.
+        fetchSpotifyUser(newSessionId ?? undefined);
       } else if (payload.type === "simrai-spotify-denied") {
         setError("Spotify connection was denied. Please try again if you want to connect.");
         setSpotifyConnected(false);
