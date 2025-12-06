@@ -8,7 +8,10 @@ from unittest.mock import Mock, patch, MagicMock
 import time
 import secrets
 
+from fastapi.testclient import TestClient
+
 from simrai import api
+from simrai.api import app
 
 
 class TestOAuthStateManagement:
@@ -58,19 +61,21 @@ class TestOAuthStateManagement:
 
     def test_oauth_callback_rejects_invalid_state(self):
         """OAuth callback should reject invalid/missing state."""
-        response = api.auth_callback(code="test_code", state="invalid_state_123", error=None, error_description=None)
+        client = TestClient(app)
+        response = client.get("/auth/callback?code=test_code&state=invalid_state_123")
         
         # Should return error HTML
         assert response.status_code == 200
-        assert b"Security Error" in response.body or b"Connection Error" in response.body
+        assert b"Security Error" in response.content or b"Connection Error" in response.content
 
     def test_oauth_callback_rejects_missing_state(self):
         """OAuth callback should reject missing state."""
-        response = api.auth_callback(code="test_code", state=None, error=None, error_description=None)
+        client = TestClient(app)
+        response = client.get("/auth/callback?code=test_code")
         
         # Should return error HTML
         assert response.status_code == 200
-        assert b"Security Error" in response.body or b"Connection Error" in response.body
+        assert b"Security Error" in response.content or b"Connection Error" in response.content
 
     def test_oauth_state_removed_after_use(self):
         """OAuth state should be removed after successful use to prevent replay."""
@@ -102,8 +107,9 @@ class TestOAuthStateManagement:
             mock_post.return_value = mock_token_resp
             mock_get.return_value = mock_me_resp
             
-            # Call callback with explicit error=None
-            response = api.auth_callback(code="test_code", state=state, error=None, error_description=None)
+            # Call callback via HTTP to exercise full FastAPI path
+            client = TestClient(app)
+            response = client.get(f"/auth/callback?code=test_code&state={state}")
             
             # State should be removed
             assert state not in api._oauth_states
@@ -212,8 +218,9 @@ class TestSessionManagement:
             mock_post.return_value = mock_token_resp
             mock_get.return_value = mock_me_resp
             
-            # Call callback with explicit error=None
-            response = api.auth_callback(code="test_code", state=state, error=None, error_description=None)
+            # Call callback via HTTP to exercise full FastAPI path
+            client = TestClient(app)
+            response = client.get(f"/auth/callback?code=test_code&state={state}")
             
             # Should have session cookie
             assert "simrai_session" in response.headers.get("set-cookie", "")
