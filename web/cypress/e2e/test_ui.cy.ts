@@ -1,7 +1,7 @@
 describe("SIMRAI web UI – mood to queue journey", () => {
   it("brews a queue from a mood description", () => {
     // Stub the FastAPI /queue endpoint so the test is backend-independent.
-    cy.intercept("POST", "http://localhost:8000/queue", {
+    cy.intercept("POST", "**/queue", {
       statusCode: 200,
       body: {
         mood: "rainy midnight drive",
@@ -60,7 +60,7 @@ describe("SIMRAI web UI – mood to queue journey", () => {
 
   it("accepts postMessage from trusted origin", () => {
     // Stub the /api/me endpoint
-    cy.intercept("GET", "http://localhost:8000/api/me", {
+    cy.intercept("GET", "**/api/me", {
       statusCode: 200,
       body: {
         id: "test_user",
@@ -83,6 +83,80 @@ describe("SIMRAI web UI – mood to queue journey", () => {
     // Should accept and fetch user profile
     cy.wait("@getMe");
     cy.contains("Spotify connected").should("be.visible");
+  });
+
+  it("renders the queue correctly on a laptop-sized viewport", () => {
+    cy.viewport("macbook-15");
+
+    cy.intercept("POST", "**/queue", {
+      statusCode: 200,
+      body: {
+        mood: "focus deep work",
+        mood_vector: { valence: 0.6, energy: 0.5 },
+        summary: "Desktop responsive test",
+        tracks: [
+          {
+            name: "Laptop Track",
+            artists: "Responsive Artist",
+            uri: "spotify:track:laptop1",
+            valence: 0.6,
+            energy: 0.5,
+          },
+        ],
+      },
+    }).as("desktopQueue");
+
+    cy.visit("/");
+
+    cy.get("textarea").type("focus deep work");
+    cy.contains("button", "Brew Queue").click();
+
+    cy.wait("@desktopQueue");
+
+    // Queue table should be visible with at least one row
+    cy.contains("Queue").should("be.visible");
+    cy.get("table tbody tr").should("have.length.at.least", 1);
+    cy.contains("Laptop Track").should("be.visible");
+
+    // On larger screens the URI column header should be visible
+    cy.contains("th", "URI").should("be.visible");
+  });
+
+  it("renders the queue correctly on a mobile-sized viewport", () => {
+    cy.viewport("iphone-6");
+
+    cy.intercept("POST", "**/queue", {
+      statusCode: 200,
+      body: {
+        mood: "late night walk",
+        mood_vector: { valence: 0.5, energy: 0.4 },
+        summary: "Mobile responsive test",
+        tracks: [
+          {
+            name: "Mobile Track",
+            artists: "Responsive Artist",
+            uri: "spotify:track:mobile1",
+            valence: 0.5,
+            energy: 0.4,
+          },
+        ],
+      },
+    }).as("mobileQueue");
+
+    cy.visit("/");
+
+    cy.get("textarea").type("late night walk under city lights");
+    cy.contains("button", "Brew Queue").click();
+
+    cy.wait("@mobileQueue");
+
+    // Queue table should still render correctly on small screens
+    cy.contains("Queue").should("be.visible");
+    cy.get("table tbody tr").should("have.length.at.least", 1);
+    cy.contains("Mobile Track").should("be.visible");
+
+    // The URI column uses `hidden sm:table-cell`, so it should not be visible on mobile
+    cy.contains("th", "URI").should("not.be.visible");
   });
 });
 

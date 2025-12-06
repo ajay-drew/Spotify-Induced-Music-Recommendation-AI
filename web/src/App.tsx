@@ -63,6 +63,7 @@ const App: React.FC = () => {
   const [showConnectedToast, setShowConnectedToast] = useState(false);
   const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profileNudge, setProfileNudge] = useState(false);
   const [showColdStartHint, setShowColdStartHint] = useState(true);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
@@ -296,6 +297,10 @@ const App: React.FC = () => {
       setError("Please describe a mood first.");
       return;
     }
+    if (!spotifyConnected) {
+      setProfileNudge(true);
+      window.setTimeout(() => setProfileNudge(false), 5000);
+    }
     setError(null);
     setLoading(true);
     setCopied(false);
@@ -332,56 +337,85 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-cursor-bg text-cursor-text p-6 sm:p-8 pb-20">
-      {/* Profile menu */}
+      {/* Profile menu (fixed top-right) */}
       <div className="fixed top-4 right-4 z-30">
-        <button
-          type="button"
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm shadow-lg backdrop-blur-lg bg-cursor-surface/80 border transition-colors ${
-            spotifyConnected ? "border-cursor-success" : "border-cursor-border"
-          }`}
-          onClick={() => setProfileOpen((open) => !open)}
-        >
-          {spotifyUser?.avatar_url ? (
-            <img
-              src={spotifyUser.avatar_url}
-              alt={spotifyUser.display_name ?? "Spotify user"}
-              className="h-5 w-5 rounded-full object-cover"
-            />
-          ) : (
-            <span className="text-cursor-textMuted">👤</span>
-          )}
-          <span className="text-xs sm:text-sm">
-            {spotifyUser
-              ? spotifyUser.display_name || spotifyUser.id
-              : "Not connected"}
-          </span>
-          <span className="text-cursor-success text-xs" aria-hidden="true">
-            {spotifyConnected ? "●" : ""}
-          </span>
-          <span className="text-cursor-textMuted text-xs">▾</span>
-        </button>
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs sm:text-sm shadow-lg backdrop-blur-lg bg-cursor-surface/80 border transition-colors ${
+              spotifyConnected ? "border-cursor-success" : "border-cursor-border"
+            } ${
+              profileNudge && !spotifyConnected
+                ? "ring-4 ring-[rgba(104,226,215,0.9)] ring-offset-2 ring-offset-cursor-bg shadow-2xl profile-nudge-glow"
+                : ""
+            }`}
+            onClick={() => setProfileOpen((open) => !open)}
+          >
+            {spotifyUser?.avatar_url ? (
+              <img
+                src={spotifyUser.avatar_url}
+                alt={spotifyUser.display_name ?? "Spotify user"}
+                className="h-5 w-5 rounded-full object-cover"
+              />
+            ) : (
+              <span className="text-cursor-textMuted">👤</span>
+            )}
+            <span className="text-xs sm:text-sm">
+              {spotifyUser
+                ? spotifyUser.display_name || spotifyUser.id
+                : "Account & Theme"}
+            </span>
+            <span className="text-cursor-success text-xs" aria-hidden="true">
+              {spotifyConnected ? "●" : ""}
+            </span>
+            <span className="text-cursor-textMuted text-xs">▾</span>
+          </button>
+        </div>
 
         {profileOpen && (
           <div className="mt-2 w-48 bg-cursor-surface border border-cursor-border rounded-md shadow-lg overflow-hidden">
             {!spotifyConnected ? (
-              <button
-                type="button"
-                className="w-full text-left px-3 py-2 text-sm hover:bg-cursor-surfaceHover transition-colors"
-                onClick={() => {
-                  startSpotifyConnect();
-                  setProfileOpen(false);
-                }}
-              >
-                Connect to Spotify
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-cursor-surfaceHover transition-colors"
+                  onClick={() => {
+                    startSpotifyConnect();
+                    setProfileOpen(false);
+                  }}
+                >
+                  Connect to Spotify
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-cursor-surfaceHover transition-colors border-t border-cursor-border/40"
+                  onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
+                  aria-label="Toggle color theme"
+                >
+                  {theme === "dark" ? "🌙 Dark" : "🌞 Light"}
+                </button>
+              </>
             ) : (
-              <button
-                type="button"
-                className="w-full text-left px-3 py-2 text-sm text-cursor-error hover:bg-cursor-surfaceHover transition-colors"
-                onClick={handleUnlinkSpotify}
-              >
-                Unlink Spotify
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-cursor-surfaceHover transition-colors"
+                  onClick={() => {
+                    setTheme((t) => (t === "dark" ? "light" : "dark"));
+                    setProfileOpen(false);
+                  }}
+                  aria-label="Toggle color theme"
+                >
+                  {theme === "dark" ? "🌞 Light" : "🌙 Dark"}
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left px-3 py-2 text-sm text-cursor-error hover:bg-cursor-surfaceHover transition-colors border-t border-cursor-border/40"
+                  onClick={handleUnlinkSpotify}
+                >
+                  Unlink Spotify
+                </button>
+              </>
             )}
           </div>
         )}
@@ -390,18 +424,10 @@ const App: React.FC = () => {
       <div className="max-w-4xl mx-auto space-y-6">
         {/* Header */}
         <header className="space-y-1">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-start gap-3">
             <h1 className="text-2xl font-semibold text-cursor-headline font-outfit">
               SIMRAI
             </h1>
-            <button
-              type="button"
-              className="btn-secondary text-xs sm:text-sm"
-              onClick={() => setTheme((t) => (t === "dark" ? "light" : "dark"))}
-              aria-label="Toggle color theme"
-            >
-              {theme === "dark" ? "🌙 Dark" : "🌞 Light"}
-            </button>
           </div>
           <p className="text-sm text-muted">
             {mood.trim()
