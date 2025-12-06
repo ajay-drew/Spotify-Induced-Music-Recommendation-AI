@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional
 
 import httpx
@@ -375,9 +376,32 @@ def _get_session_user_id(request: Request) -> str:
     tokens = _load_tokens(session_id)
     if tokens:
         user_id = tokens.get("user_id") or session_id
-        logger.info(f"Recovered session for user {user_id!r} from token store")
+        logger.info(f"Recovered session for user {user_id!r} from token store (direct match)")
         _sessions[session_id] = user_id
         return user_id
+
+    # Extra resilience: scan all token files to see if any belong to this user_id.
+    try:
+        if _tokens_dir.exists():
+            for path in _tokens_dir.glob("*.json"):
+                try:
+                    import json
+
+                    with path.open("r", encoding="utf-8") as f:
+                        data = json.load(f)
+                except Exception:  # pragma: no cover - corrupted file, skip
+                    continue
+                file_user_id = data.get("user_id") or path.stem
+                if file_user_id == session_id:
+                    logger.info(
+                        "Recovered session for user %r by scanning token store (file=%s)",
+                        file_user_id,
+                        path.name,
+                    )
+                    _sessions[session_id] = file_user_id
+                    return file_user_id
+    except Exception:  # pragma: no cover - defensive
+        logger.warning("Error while scanning token store for session recovery", exc_info=True)
 
     logger.warning("No valid session found in request (cookie present but no tokens)")
     raise HTTPException(
@@ -460,7 +484,7 @@ def auth_login() -> RedirectResponse:
     """
     Redirect the user to Spotify's authorize page to connect their account.
 
-    This is designed for local use: visit http://localhost:8000/auth/login
+    This is designed for local use: visit http://127.0.0.1:8000/auth/login
     in your browser, approve the app, and then come back to SIMRAI.
     """
     from urllib.parse import urlencode
@@ -471,8 +495,9 @@ def auth_login() -> RedirectResponse:
     client_id = _cfg.spotify.client_id
     # Redirect URI is managed in the Spotify Developer dashboard; SIMRAI always
     # uses the standard local callback path.
-    # Default to localhost (can be overridden via SIMRAI_SPOTIFY_REDIRECT_URI env var)
-    redirect_uri = os.getenv("SIMRAI_SPOTIFY_REDIRECT_URI", "http://localhost:8000/auth/callback")
+    # Default to loopback address (can be overridden via SIMRAI_SPOTIFY_REDIRECT_URI env var)
+    # Note: Spotify does not allow "localhost" here; use explicit 127.0.0.1.
+    redirect_uri = os.getenv("SIMRAI_SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8000/auth/callback")
 
     if not client_id:
         logger.error("OAuth login failed: SIMRAI_SPOTIFY_CLIENT_ID not set")
@@ -635,9 +660,10 @@ def auth_callback(
             detail="Spotify client ID/secret are not configured.",
         )
 
-    # Redirect URI must match what's configured in Spotify Developer Dashboard
-    # Default to localhost (can be overridden via SIMRAI_SPOTIFY_REDIRECT_URI env var)
-    redirect_uri = os.getenv("SIMRAI_SPOTIFY_REDIRECT_URI", "http://localhost:8000/auth/callback")
+    # Redirect URI must match what's configured in Spotify Developer Dashboard.
+    # Default to loopback address (can be overridden via SIMRAI_SPOTIFY_REDIRECT_URI env var).
+    # Note: Spotify does not allow "localhost" here; use explicit 127.0.0.1.
+    redirect_uri = os.getenv("SIMRAI_SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8000/auth/callback")
 
     # Exchange authorization code for tokens (only happens if user approved)
     logger.info("Exchanging authorization code for tokens")

@@ -24,7 +24,10 @@ type SpotifyUser = {
 
 // In development, we hit the local FastAPI backend; in production (Render),
 // VITE_API_URL is set to the deployed API URL (e.g. https://simrai-api.onrender.com).
-const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+// NOTE: Default to explicit loopback IP (127.0.0.1) instead of localhost so that
+// cookies set during the OAuth callback (which must also use 127.0.0.1) are sent
+// with subsequent API requests from the frontend.
+const API_BASE = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8000";
 
 function bar(value: number, width = 10): string {
   const v = Math.max(0, Math.min(1, value));
@@ -80,9 +83,19 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
-      // SECURITY: Validate message origin to prevent XSS attacks
+      // SECURITY: Validate message origin to prevent XSS attacks.
+      // In local dev, the API can be reached via localhost or 127.0.0.1;
+      // accept both loopback origins so Spotify redirect to 127.0.0.1 works
+      // even if API_BASE uses localhost (and vice versa).
       const expectedOrigin = new URL(API_BASE).origin;
-      if (event.origin !== expectedOrigin) {
+      const altOrigin =
+        expectedOrigin.includes("localhost")
+          ? expectedOrigin.replace("localhost", "127.0.0.1")
+          : expectedOrigin.includes("127.0.0.1")
+          ? expectedOrigin.replace("127.0.0.1", "localhost")
+          : expectedOrigin;
+
+      if (event.origin !== expectedOrigin && event.origin !== altOrigin) {
         console.warn(`Rejected postMessage from untrusted origin: ${event.origin}`);
         return;
       }

@@ -11,7 +11,7 @@ rem   - Recommended: create a venv at .\venv (auto-activated if present)
 cd /d "%~dp0"
 
 echo.
-echo SIMRAI :: starting backend on http://localhost:8000 ...
+echo SIMRAI :: starting backend on http://127.0.0.1:8000 ...
 if exist "venv\Scripts\activate.bat" (
   echo Using local venv at .\venv
   start "SIMRAI Backend" cmd /c "call venv\Scripts\activate.bat && simrai serve --host 0.0.0.0 --port 8000"
@@ -21,9 +21,9 @@ if exist "venv\Scripts\activate.bat" (
 )
 
 echo.
-echo SIMRAI :: starting web UI on http://localhost:5658 ...
+echo SIMRAI :: starting web UI on http://127.0.0.1:5658 ...
 cd web
-npm run dev -- --port 5658
+npm run dev -- --host 127.0.0.1 --port 5658
 
 endlocal
 
