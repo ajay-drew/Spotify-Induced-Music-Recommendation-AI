@@ -1,268 +1,159 @@
-# SIMRAI – Spotify-Induced Music Recommendation AI
+## SIMRAI – Spotify‑Induced Music Recommendation AI
 
-**SIMRAI** turns free‑text mood descriptions into curated Spotify queues and optional playlists.  
-You type *“rainy midnight drive with someone you miss”* → SIMRAI builds a queue and (if you connect Spotify) can export it as a playlist to **your** account.
-
----
-
-## Why SIMRAI is Better Than Spotify’s Built‑In Recommendations
-
-### 🎯 **Mood‑First Discovery**
-- **Spotify**: You start from artists, tracks, or static playlists.
-- **SIMRAI**: You start from a *feeling* – “pre‑exam focus”, “end‑of‑summer nostalgia”, “boss fight energy” – and get a queue shaped around that mood.
-
-### 🧠 **Groq‑Backed + Rule‑Based Brain**
-- Uses a lightweight **Groq** model (optional) plus deterministic rules to:
-  - Estimate valence/energy from your text.
-  - Decide newer vs. older, popular vs. obscure preferences.
-
-### ⚙️ **Metadata‑Only, API‑Friendly**
-- No reliance on Spotify’s blocked audio‑features/recommendations for new apps.
-- Uses **search + metadata** (popularity, year, text heuristics) to score tracks.
-
-### 🔒 **Safer OAuth & Multi‑User Ready**
-- Explicit Spotify OAuth consent (with `show_dialog=true`) and account picker.
-- Tokens stored **per user** on the backend, tied to a session cookie.
-- Rate‑limited endpoints to avoid 429s and abuse.
-
-### 🧪 **Real Tests & CI**
-- Pytest suite with coverage gate (`--cov-fail-under=70`).
-- GitHub Actions CI runs Python tests + coverage and builds the React frontend on every push/PR to `main`.
+SIMRAI turns a free‑text mood like _“rainy midnight drive with someone you miss”_ into a Spotify queue you can play or export as a playlist in **your** account.
 
 ---
 
-## Where to Access SIMRAI
+## Live Demo (Render)
 
-### 🌐 Hosted (Render)
-
-- **Frontend (Web UI)**: `https://simrai.onrender.com`
-- **Backend (FastAPI API)**: `https://simrai-api.onrender.com`
+- **Web UI**: `https://simrai.onrender.com`  
+- **API**: `https://simrai-api.onrender.com`
   - Health: `https://simrai-api.onrender.com/health`
   - Docs (Swagger): `https://simrai-api.onrender.com/docs`
 
-#### ⚠️ Cold Start (Render Free Tier)
-
-The backend (`simrai-api`) runs on Render’s **free tier**:
-
-- If the service has been idle for a while, Render **scales it down to zero**.
-- The **first request after inactivity** will experience a **cold start**:
-  - Expect **~20–60 seconds** delay before the first successful response.
-  - You may briefly see 5xx errors or timeouts during warm‑up.
-- Once warm, responses are fast and normal.
-
-**Tip:** If the web UI seems stuck on “brewing” for the first time, wait ~30 seconds and try again – that’s just the container waking up.
+> Render free tier: the API may take **20–60 seconds** to wake up after being idle. If the first request is slow or briefly errors, wait and try again.
 
 ---
 
-## Quick Start (Local)
+## What It Does (In One Glance)
 
-### Prerequisites
+- **Mood‑first discovery** – start with a feeling instead of a playlist or genre.
+- **Metadata‑only ranking** – uses Spotify search + metadata (popularity, year, track/album text); it does **not** rely on blocked audio‑features endpoints.
+- **Optional Groq AI** – a Groq‑hosted open model (if `GROQ_API_KEY` is set) refines the mood vector; otherwise a fast rule‑based engine runs locally.
+- **Spotify OAuth + playlist export** – connect your own Spotify once, then create a SIMRAI playlist in your account with a single button.
+- **Two front‑ends** – a Typer CLI and a React/Tailwind web UI (friends/family‑friendly).
 
-- Python 3.10+
-- Node.js 18+ (for web UI)
-- Spotify Developer Account (free)
+SIMRAI uses only standard Spotify Web API endpoints for **search** and **playlist creation** and never stores your Spotify password or client secret in the browser.
 
-### 1. Clone & Install
+---
+
+## Tech Snapshot
+
+- **Backend**: Python 3.10+, FastAPI, httpx
+- **Spotify**: OAuth authorization‑code flow; Web API search + playlist endpoints (metadata‑driven)
+- **AI**: Optional Groq client (e.g. Llama‑3‑style model) plus deterministic heuristics
+- **Frontend**: React + Vite + TypeScript + Tailwind CSS
+- **Tests/CI**: pytest + pytest‑cov, GitHub Actions, coverage gate at 70%+
+
+---
+
+## Local Quick Start
+
+### 1. Clone & install
 
 ```bash
 git clone https://github.com/ajay-drew/Spotify-Induced-Music-Recommendation-AI.git
 cd Spotify-Induced-Music-Recommendation-AI
 
 python -m venv venv
-# Windows
-venv\Scripts\activate
-# Linux/macOS
-source venv/bin/activate
+venv\Scripts\activate  # Windows
+# or
+source venv/bin/activate  # Linux/macOS
 
 pip install -r requirements.txt
 pip install -e .
 ```
 
-### 2. Configure Environment
+### 2. Configure env vars
 
 Create a `.env` file in the project root:
 
 ```env
-SIMRAI_SPOTIFY_CLIENT_ID=your_client_id
-SIMRAI_SPOTIFY_CLIENT_SECRET=your_client_secret
+SIMRAI_SPOTIFY_CLIENT_ID=your_spotify_client_id
+SIMRAI_SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
 
-# Optional Groq AI enhancement
+# Optional: Groq for smarter mood interpretation
 GROQ_API_KEY=your_groq_api_key
 SIMRAI_GROQ_MODEL=llama-3.1-8b-instant
-
-# Optional logging level (DEBUG, INFO, WARNING, ERROR)
-SIMRAI_LOG_LEVEL=INFO
 ```
 
-In your **Spotify Developer Dashboard** app settings:
+In your **Spotify Developer Dashboard** app settings, configure redirect URIs:
 
-- Add these redirect URIs:
-  - **For local development:** `http://localhost:8000/auth/callback`
-  - **For Render production:** `https://simrai-api.onrender.com/auth/callback`
+- **Local dev**: `http://127.0.0.1:8000/auth/callback`  
+- **Production (Render)**: `https://simrai-api.onrender.com/auth/callback`
 
-**Important:** 
-- The redirect URI in your Spotify app settings must match EXACTLY what's in the code
-- For localhost, you can use either `localhost` or `127.0.0.1` (both work)
-- For production on Render, you MUST use HTTPS and the exact Render URL
-- Make sure there are no trailing slashes or typos
+> Spotify requires loopback addresses (e.g. `127.0.0.1`) for local dev – `localhost` is not allowed.
 
-### 3. CLI Mode
-
-Generate a queue from command line:
+### 3. Run CLI mode
 
 ```bash
-simrai queue "rainy midnight drive" --length 15
+simrai queue "rainy midnight drive with someone you miss" --length 15
 ```
 
-Options:
+Key flags:
 
-- `--length` / `-n`: Queue length (8–30, default: 12)
-- `--intense`: Bias toward higher energy
-- `--soft`: Bias toward lower energy, gentler vibes
+- `--length` / `-n`: number of tracks (8–30, default 12)
+- `--intense`: bias toward higher energy
+- `--soft`: bias toward lower energy
 
-### 4. Web UI Mode (Local)
+### 4. Run backend + web UI
 
-1. **Start the backend**
-   ```bash
-   simrai serve
-   ```
-   Backend runs on `http://localhost:8000`
-
-2. **Start the frontend** (in a new terminal)
-   ```bash
-   cd web
-   npm install
-   npm run dev
-   ```
-   Frontend runs on `http://localhost:5658`
-
-3. **Open your browser**
-   - Navigate to `http://localhost:5658`
-   - Enter your mood description
-   - Click **Brew Queue** to generate recommendations
-   - Connect Spotify (optional) to export playlists
-
-#### Windows Quick Start
-
-Use the provided batch files:
+**Windows (recommended):**
 
 ```cmd
-run_all.cmd    # Starts both backend and frontend
-run_cli.cmd    # Runs CLI mode only
+run_all.cmd
 ```
 
----
+This will start:
 
-## Project Structure
+- Backend API at `http://127.0.0.1:8000`
+- Frontend at `http://127.0.0.1:5658`
 
-```text
-├── src/simrai/          # Python package
-│   ├── cli.py           # CLI entrypoint (queue / serve)
-│   ├── api.py           # FastAPI endpoints (queue, OAuth, playlist, profile)
-│   ├── pipeline.py      # Queue generation logic (metadata-first, no audio-features)
-│   ├── mood.py          # Mood interpretation (rule-based core + optional Groq refinement)
-│   ├── spotify.py       # Spotify integration (search + metadata only)
-│   └── agents.py        # Lightweight compatibility stubs (no CrewAI)
-├── web/                 # React + Vite + Tailwind frontend
-│   ├── src/
-│   └── package.json
-├── pythontests/         # Python test suite
-├── .github/workflows/   # GitHub Actions tests & frontend build
-├── render.yaml          # Render deployment (backend + static frontend)
-└── requirements.txt     # Python dependencies
-```
+Open `http://127.0.0.1:5658` in your browser.
 
----
+**Manual (all platforms):**
 
-## Architecture
-
-For a detailed production-grade system architecture diagram with data flows, security layers, and deployment infrastructure, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-
-## How It Works
-
-1. **Mood Interpretation**
-   - Your text is analyzed to extract:
-     - Emotional valence (positive/negative)
-     - Energy level (calm/intense)
-     - Search terms and preferences (popular/obscure, recent/classics)
-   - Optional Groq model refines this interpretation when `GROQ_API_KEY` is set.
-
-2. **Spotify Search**
-   - Uses Spotify’s search API to find candidate tracks matching the interpreted query.
-
-3. **Smart Ranking**
-   - Ranks tracks using:
-     - Popularity scores
-     - Release year
-     - Track/album name analysis (“acoustic”, “remix”, etc.)
-     - Mood preferences
-
-4. **Queue Generation**
-   - Creates an ordered queue with a gentle energy progression.
-   - Produces synthetic valence/energy values per track using metadata alone.
-
-5. **Optional Playlist Export**
-   - After you connect Spotify via OAuth:
-     - `/api/create-playlist` creates a playlist in your account.
-     - `/api/add-tracks` adds the brewed queue URIs to that playlist.
-
----
-
-## Monitoring Logs
-
-SIMRAI uses Python’s built‑in `logging` module with a rotating log file plus console output.
-
-- **Log location** (via `platformdirs.user_config_dir`):
-  - Linux/macOS: typically `~/.config/simrai/logs/simrai.log`
-  - Windows: `%LOCALAPPDATA%\Project57\simrai\logs\simrai.log`
-
-View logs in real-time:
+Backend:
 
 ```bash
-# Linux/macOS (adjust path if needed)
-tail -f ~/.config/simrai/logs/simrai.log
-
-# Windows PowerShell
-Get-Content "$env:LOCALAPPDATA\Project57\simrai\logs\simrai.log" -Wait -Tail 50
+simrai serve  # FastAPI on http://127.0.0.1:8000
 ```
 
-Configure log level via environment variable:
+Frontend:
 
 ```bash
-export SIMRAI_LOG_LEVEL=DEBUG  # DEBUG, INFO, WARNING, ERROR
+cd web
+npm install
+npm run dev -- --host 127.0.0.1 --port 5658
 ```
+
+Then browse to `http://127.0.0.1:5658`.
+
+---
+
+## How the Model & API Work (Short Version)
+
+1. **Interpret mood** – free‑text mood → valence/energy + preferences (popular/obscure, recent/classic) via rule‑based logic + optional Groq refinement.
+2. **Search Spotify** – use Spotify search API to fetch candidate tracks for the interpreted query.
+3. **Score using metadata** – rank tracks using popularity, release year, and text cues from track/album names (e.g. “acoustic”, “remix”, “club”) to synthesize valence/energy.
+4. **Build a queue** – produce an ordered list of tracks that gently moves energy/valence in the intended direction, in either:
+   - **Track count mode** (N best tracks), or  
+   - **Duration mode** (approximate total minutes ±3 min).
+5. **Export (optional)** – once connected via OAuth, the backend creates a playlist and adds the queued tracks; the web UI exposes this as a “Create Playlist” button.
+
+All OAuth tokens and Spotify secrets stay on the backend; the browser only sees high‑level status and track data.
 
 ---
 
 ## Testing & CI
 
-Run the test suite with coverage (matches CI):
+- Local tests:
 
-```bash
-pytest pythontests --cov=src/simrai --cov-report=term-missing --cov-report=xml --cov-fail-under=70
-```
+  ```bash
+  pytest pythontests --cov=src/simrai --cov-fail-under=70
+  ```
 
-GitHub Actions (`.github/workflows/tests.yml`) runs:
-
-- **Python tests & coverage** (with `pip install -e .` so `simrai` imports work).
-- **Frontend build** in `web/` (`npm ci && npm run build`).
-
-Protect `main` by requiring these checks to pass before merging.
+- GitHub Actions (`.github/workflows/tests.yml`) runs:
+  - Backend tests with coverage
+  - Frontend build (`npm ci && npm run build` in `web/`)
 
 ---
 
-## License & Contributing
-
-- **License**: See `LICENSE`.
-- **Contributions**: Issues and PRs are welcome – especially around new mood heuristics, better metadata scoring, or UX improvements to the web UI.
-
----
-
-## Done By
+## Created By
 
 **Ajay A**
 
-- **Email**: [drewjay05@gmail.com](mailto:drewjay05@gmail.com)
-- **LinkedIn**: [https://www.linkedin.com/in/ajay-drew/](https://www.linkedin.com/in/ajay-drew/)
+- **Email**: `drewjay05@gmail.com`  
+- **LinkedIn**: `https://www.linkedin.com/in/ajay-drew/`
 
-
+SIMRAI is designed as a compact, end‑to‑end project you can share with friends, family, and recruiters: mood‑driven queues, real Spotify OAuth, a clean web UI, and a tested Python backend.

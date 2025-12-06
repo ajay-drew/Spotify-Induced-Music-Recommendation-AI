@@ -534,6 +534,7 @@ def auth_login() -> RedirectResponse:
 
 @app.get("/auth/callback", tags=["auth"])
 def auth_callback(
+    request: Request,
     code: Optional[str] = Query(None),
     state: Optional[str] = Query(None),
     error: Optional[str] = Query(None),
@@ -825,13 +826,31 @@ def auth_callback(
     """
     response = HTMLResponse(content=html)
     # Set session cookie.
-    # - In local/dev (default), we use SameSite=Lax and no Secure flag so it works on http://localhost.
-    # - On Render (RENDER env var is set), the API and web are on different origins,
-    #   so we must use SameSite=None and Secure=True for the cookie to be sent with
-    #   cross-site XHR/fetch requests (required for /api/me, /api/create-playlist, etc.).
-    is_render = bool(os.getenv("RENDER"))
-    cookie_samesite = "none" if is_render else "lax"
-    cookie_secure = True if is_render else False
+    #
+    # Local/dev:
+    #   - Usually http://127.0.0.1:8000, so we must NOT set Secure (http would ignore it).
+    #   - SameSite=Lax is fine because frontend and backend share the same site.
+    #
+    # Production (Render):
+    #   - API is served over HTTPS on simrai-api.onrender.com and called from simrai.onrender.com.
+    #   - This is a cross-site scenario, so we must set SameSite=None and Secure=True for
+    #     the cookie to be sent with XHR/fetch requests (for /api/me, /api/create-playlist, etc.).
+    #
+    # We detect production by looking at the request URL (https and non-loopback host),
+    # but still respect an explicit RENDER env flag if present.
+    host = request.url.hostname or ""
+    scheme = request.url.scheme or "http"
+    is_loopback = host in ("127.0.0.1", "localhost")
+    is_https = scheme == "https"
+    is_render_env = bool(os.getenv("RENDER"))
+    is_cross_site_https = is_https and not is_loopback
+
+    if is_render_env or is_cross_site_https:
+        cookie_samesite = "none"
+        cookie_secure = True
+    else:
+        cookie_samesite = "lax"
+        cookie_secure = False
 
     response.set_cookie(
         key="simrai_session",
