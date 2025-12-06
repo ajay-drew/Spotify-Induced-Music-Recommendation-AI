@@ -52,6 +52,14 @@ const App: React.FC = () => {
   const [playlistUrl, setPlaylistUrl] = useState<string | null>(null);
   const [playlistMessage, setPlaylistMessage] = useState<string | null>(null);
   const [spotifyConnected, setSpotifyConnected] = useState(false);
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      return localStorage.getItem("simrai-session-id");
+    } catch {
+      return null;
+    }
+  });
   const [showConnectedToast, setShowConnectedToast] = useState(false);
   const [spotifyUser, setSpotifyUser] = useState<SpotifyUser | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -68,7 +76,8 @@ const App: React.FC = () => {
   const fetchSpotifyUser = async () => {
     try {
       const resp = await fetch(`${API_BASE}/api/me`, {
-        credentials: "include",  // Send cookies
+        credentials: "include",  // Send cookies when available
+        headers: sessionId ? { "X-Simrai-Session": sessionId } : undefined,
       });
       if (!resp.ok) {
         return;
@@ -103,6 +112,14 @@ const App: React.FC = () => {
       const payload = event.data as any;
       if (!payload) return;
       if (payload.type === "simrai-spotify-connected") {
+        if (payload.sessionId && typeof payload.sessionId === "string") {
+          setSessionId(payload.sessionId);
+          try {
+            localStorage.setItem("simrai-session-id", payload.sessionId);
+          } catch {
+            // ignore storage errors
+          }
+        }
         setSpotifyConnected(true);
         setPlaylistMessage("Spotify is connected. You can now create playlists.");
         setShowConnectedToast(true);
@@ -155,12 +172,19 @@ const App: React.FC = () => {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",  // Send cookies
+        body: undefined,
       });
       if (!resp.ok) {
         throw new Error("Unlink failed");
       }
       setSpotifyConnected(false);
       setSpotifyUser(null);
+      setSessionId(null);
+      try {
+        localStorage.removeItem("simrai-session-id");
+      } catch {
+        // ignore
+      }
       setPlaylistMessage(null);
       setShowConnectedToast(false);
       setProfileOpen(false);
@@ -198,8 +222,11 @@ const App: React.FC = () => {
     try {
       const createResp = await fetch(`${API_BASE}/api/create-playlist`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",  // Send cookies
+        headers: {
+          "Content-Type": "application/json",
+          ...(sessionId ? { "X-Simrai-Session": sessionId } : {}),
+        },
+        credentials: "include",  // Send cookies when available
         body: JSON.stringify({
           name,
           description: "Brewed by SIMRAI",
@@ -223,8 +250,11 @@ const App: React.FC = () => {
 
       const addResp = await fetch(`${API_BASE}/api/add-tracks`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",  // Send cookies
+        headers: {
+          "Content-Type": "application/json",
+          ...(sessionId ? { "X-Simrai-Session": sessionId } : {}),
+        },
+        credentials: "include",  // Send cookies when available
         body: JSON.stringify({
           playlist_id: created.playlist_id,
           uris,

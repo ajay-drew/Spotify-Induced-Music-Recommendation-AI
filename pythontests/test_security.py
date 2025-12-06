@@ -263,6 +263,7 @@ class TestSessionManagement:
         """Should raise HTTPException when no session cookie."""
         mock_request = Mock()
         mock_request.cookies = {}
+        mock_request.headers = {}
         
         with pytest.raises(api.HTTPException) as exc_info:
             api._get_session_user_id(mock_request)

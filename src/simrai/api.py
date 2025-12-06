@@ -356,12 +356,21 @@ def _fetch_playlist_stats() -> PlaylistStatsOut:
 
 def _get_session_user_id(request: Request) -> str:
     """
-    Get the user_id for the current session from cookies.
+    Get the user_id for the current session from cookies or fallback header.
     Raises HTTPException if no session found.
     """
     session_id = request.cookies.get("simrai_session")
+
+    # Fallback for environments where third-party cookies are blocked:
+    # allow the frontend to send an explicit session header instead.
     if not session_id:
-        logger.warning("No session cookie found in request")
+        header_session = request.headers.get("X-Simrai-Session")
+        if header_session:
+            logger.info("Using session from X-Simrai-Session header")
+            session_id = header_session
+
+    if not session_id:
+        logger.warning("No session cookie or session header found in request")
         raise HTTPException(
             status_code=401,
             detail="No active session. Please connect your Spotify account.",
@@ -813,7 +822,10 @@ def auth_callback(
         <script>
           try {
             if (window.opener) {
-              window.opener.postMessage({ type: "simrai-spotify-connected" }, "*");
+              window.opener.postMessage(
+                { type: "simrai-spotify-connected", sessionId: "%s" },
+                "*"
+              );
             }
             // Give the opener a moment to process, then close.
             setTimeout(function () { window.close(); }, 1500);
@@ -823,7 +835,7 @@ def auth_callback(
         </script>
       </body>
     </html>
-    """
+    """ % session_id
     response = HTMLResponse(content=html)
     # Set session cookie.
     #
