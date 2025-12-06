@@ -33,10 +33,11 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime
 from typing import List, Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import FastAPI, HTTPException, Header, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
 from pydantic import BaseModel
@@ -54,6 +55,15 @@ logger = logging.getLogger(__name__)
 
 # Rate limiter to prevent hitting Spotify/Groq API limits
 limiter = Limiter(key_func=get_remote_address)
+
+# Optional Neon/PostgreSQL stats database for playlist tracking
+STATS_DB_URL = os.getenv("SIMRAI_STATS_DATABASE_URL")
+ADMIN_TOKEN = os.getenv("SIMRAI_ADMIN_TOKEN")
+
+try:  # pragma: no cover - import guarding
+    import psycopg
+except Exception:  # pragma: no cover - if driver missing, we degrade gracefully
+    psycopg = None  # type: ignore
 
 app = FastAPI(
     title="SIMRAI API",
@@ -228,6 +238,18 @@ class UnlinkSpotifyOut(BaseModel):
     status: str
 
 
+class PlaylistEventOut(BaseModel):
+    playlist_id: str
+    playlist_name: Optional[str] = None
+    created_at: datetime
+
+
+class PlaylistStatsOut(BaseModel):
+    total: int
+    playlists: List[PlaylistEventOut]
+
+
+
 def _get_token_path(user_id: str) -> Path:
     """Get the token file path for a specific user."""
     _tokens_dir.mkdir(parents=True, exist_ok=True)
@@ -267,6 +289,68 @@ def _delete_tokens(user_id: str) -> None:
         token_path.unlink()
     except FileNotFoundError:
         pass
+
+
+def _record_playlist_event(playlist_id: Optional[str], playlist_name: Optional[str]) -> None:
+    """
+    Best-effort recording of playlist creation in the stats database.
+
+    If the stats DB is not configured or the driver is unavailable, this
+    function silently returns. Failures are logged but never break the
+    main playlist-creation flow.
+    """
+    if not STATS_DB_URL:
+        return
+    if psycopg is None:  # pragma: no cover - depends on optional driver
+        logger.warning("psycopg is not available; cannot record playlist stats")
+        return
+    if not playlist_id:
+        return
+
+    try:
+        with psycopg.connect(STATS_DB_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    'INSERT INTO "simrai" (created_at, playlist_id, playlist_name) '
+                    "VALUES (CURRENT_TIMESTAMP, %s, %s)",
+                    (playlist_id, playlist_name),
+                )
+    except Exception:  # pragma: no cover - best-effort logging only
+        logger.warning("Failed to record playlist event in stats database", exc_info=True)
+
+
+def _fetch_playlist_stats() -> PlaylistStatsOut:
+    """
+    Fetch total playlist count and recent playlist events from the stats DB.
+
+    Raises RuntimeError if stats DB is not configured or driver is missing.
+    """
+    if not STATS_DB_URL:
+        raise RuntimeError("Stats database is not configured")
+    if psycopg is None:  # pragma: no cover - depends on optional driver
+        raise RuntimeError("psycopg driver is not available")
+
+    with psycopg.connect(STATS_DB_URL) as conn:
+        with conn.cursor() as cur:
+            cur.execute('SELECT COUNT(*) FROM "simrai"')
+            row = cur.fetchone()
+            total = int(row[0]) if row and row[0] is not None else 0
+
+            cur.execute(
+                'SELECT playlist_id, playlist_name, created_at '
+                'FROM "simrai" ORDER BY created_at DESC LIMIT 50'
+            )
+            rows = cur.fetchall() or []
+
+    playlists = [
+        PlaylistEventOut(
+            playlist_id=r[0],
+            playlist_name=r[1],
+            created_at=r[2],
+        )
+        for r in rows
+    ]
+    return PlaylistStatsOut(total=total, playlists=playlists)
 
 
 def _get_session_user_id(request: Request) -> str:
@@ -874,6 +958,12 @@ def api_create_playlist(body: CreatePlaylistRequest, request: Request) -> JSONRe
     external_url = data.get("external_urls", {}).get("spotify")
     logger.info(f"Playlist created successfully: {playlist_id} ({external_url})")
 
+    # Best-effort: record playlist creation in stats DB (if configured)
+    try:
+        _record_playlist_event(playlist_id=playlist_id, playlist_name=name)
+    except Exception:  # pragma: no cover - recording must never break main flow
+        logger.warning("Ignoring error while recording playlist event", exc_info=True)
+
     return JSONResponse(
         {
             "playlist_id": playlist_id,
@@ -918,3 +1008,26 @@ def api_add_tracks(body: AddTracksRequest, request: Request) -> JSONResponse:
     data = resp.json()
     logger.info(f"Tracks added successfully to playlist {body.playlist_id}")
     return JSONResponse({"snapshot_id": data.get("snapshot_id")})
+
+
+@app.get("/admin/playlist-stats", response_model=PlaylistStatsOut, tags=["admin"])
+def admin_playlist_stats(
+    x_admin_token: str = Header(..., alias="X-Admin-Token"),
+) -> PlaylistStatsOut:
+    """
+    Admin-only endpoint to retrieve playlist stats from the Neon/PostgreSQL DB.
+
+    Requires X-Admin-Token header to match SIMRAI_ADMIN_TOKEN.
+    """
+    if not ADMIN_TOKEN or x_admin_token != ADMIN_TOKEN:
+        logger.warning("Unauthorized access attempt to /admin/playlist-stats")
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    try:
+        return _fetch_playlist_stats()
+    except RuntimeError as exc:
+        logger.error(f"Stats database not available: {exc}")
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - safety net
+        logger.exception(f"Failed to fetch playlist stats: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to fetch playlist stats") from exc

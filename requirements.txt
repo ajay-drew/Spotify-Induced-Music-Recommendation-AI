@@ -7,6 +7,9 @@ platformdirs>=4.0.0
 fastapi>=0.115.0
 uvicorn>=0.30.0
 
+# Database (for persistent playlist stats via Neon/PostgreSQL)
+psycopg[binary]>=3.1.10
+
 # Dev / tooling (optional)
 pytest>=8.0.0
 pytest-cov>=5.0.0

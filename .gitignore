@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 .cursorrules
 
+SIMRAI_design_document.md
+SIMRAI_design_plan.md
+TEST_RESULTS.md
 # C extensions
 *.so
 
@@ -144,6 +147,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.env.example
 
 # Spyder project settings
 .spyderproject

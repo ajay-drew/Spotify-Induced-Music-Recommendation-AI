@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch, MagicMock
 from fastapi.testclient import TestClient
 
 from simrai import api
-from simrai.api import app
+from simrai.api import app, PlaylistStatsOut, PlaylistEventOut
 
 
 class TestCreatePlaylist:
@@ -26,7 +26,8 @@ class TestCreatePlaylist:
         with patch.object(api, '_cfg') as mock_cfg, \
              patch.object(api, '_get_user_access_token') as mock_token, \
              patch.object(api, '_oauth_http') as mock_http, \
-             patch.object(api, '_sessions', {"test_session": "test_user"}):
+             patch.object(api, '_sessions', {"test_session": "test_user"}), \
+             patch.object(api, '_record_playlist_event') as mock_record:
             mock_cfg.spotify.client_id = "test_client_id"
             mock_token.return_value = "test_access_token"
             
@@ -57,6 +58,12 @@ class TestCreatePlaylist:
             data = resp.json()
             assert data["playlist_id"] == "playlist_123"
             assert "spotify.com/playlist" in data["url"]
+
+            # Verify stats recording was called best-effort
+            mock_record.assert_called_once()
+            args, kwargs = mock_record.call_args
+            assert kwargs.get("playlist_id") == "playlist_123"
+            assert kwargs.get("playlist_name") == "My Playlist"
 
     def test_create_playlist_uses_default_name(self):
         """Test that playlist uses default name if not provided."""
@@ -276,4 +283,54 @@ class TestSearchEndpoint:
             assert resp.status_code == 200
             call_args = mock_http.get.call_args
             assert call_args[1]["params"]["limit"] == 1
+
+
+class TestAdminPlaylistStats:
+    """Tests for the admin-only playlist stats endpoint."""
+
+    def test_playlist_stats_requires_admin_token(self, monkeypatch):
+        """Endpoint should return 403 without correct admin token."""
+        monkeypatch.setattr(api, "ADMIN_TOKEN", "secret-token", raising=False)
+
+        client = TestClient(app)
+
+        # Missing header
+        resp = client.get("/admin/playlist-stats")
+        assert resp.status_code == 422  # missing required header
+
+        # Wrong token
+        resp = client.get("/admin/playlist-stats", headers={"X-Admin-Token": "wrong"})
+        assert resp.status_code == 403
+
+    def test_playlist_stats_success(self, monkeypatch):
+        """Admin stats endpoint should return data from _fetch_playlist_stats."""
+        monkeypatch.setattr(api, "ADMIN_TOKEN", "secret-token", raising=False)
+
+        fake_stats = PlaylistStatsOut(
+            total=2,
+            playlists=[
+                PlaylistEventOut(
+                    playlist_id="pl1",
+                    playlist_name="Chill Vibes",
+                    created_at="2025-01-01T00:00:00Z",
+                ),
+                PlaylistEventOut(
+                    playlist_id="pl2",
+                    playlist_name="Workout Mix",
+                    created_at="2025-01-02T00:00:00Z",
+                ),
+            ],
+        )
+
+        with patch.object(api, "_fetch_playlist_stats", return_value=fake_stats):
+            client = TestClient(app)
+            resp = client.get(
+                "/admin/playlist-stats", headers={"X-Admin-Token": "secret-token"}
+            )
+
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total"] == 2
+            assert len(data["playlists"]) == 2
+            assert data["playlists"][0]["playlist_name"] == "Chill Vibes"
 

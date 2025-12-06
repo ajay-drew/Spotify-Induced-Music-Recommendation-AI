@@ -290,13 +290,11 @@ const App: React.FC = () => {
               className="h-5 w-5 rounded-full object-cover"
             />
           ) : (
-            <span className="text-cursor-textMuted">
-              {spotifyConnected ? "🎧" : "👤"}
-            </span>
+            <span className="text-cursor-textMuted">👤</span>
           )}
           <span className="text-xs sm:text-sm">
-            {spotifyConnected
-              ? spotifyUser?.display_name ?? "Connected"
+            {spotifyUser
+              ? spotifyUser.display_name || spotifyUser.id
               : "Not connected"}
           </span>
           <span className="text-cursor-success text-xs" aria-hidden="true">
