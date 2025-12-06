@@ -359,13 +359,31 @@ def _get_session_user_id(request: Request) -> str:
     Raises HTTPException if no session found.
     """
     session_id = request.cookies.get("simrai_session")
-    if not session_id or session_id not in _sessions:
-        logger.warning("No valid session found in request")
+    if not session_id:
+        logger.warning("No session cookie found in request")
         raise HTTPException(
             status_code=401,
-            detail="No active session. Please connect your Spotify account."
+            detail="No active session. Please connect your Spotify account.",
         )
-    return _sessions[session_id]
+
+    # Primary path: in-memory session map (current process)
+    if session_id in _sessions:
+        return _sessions[session_id]
+
+    # Fallback: treat cookie value as user_id and verify tokens exist on disk.
+    # This makes sessions resilient across restarts when tokens are persisted.
+    tokens = _load_tokens(session_id)
+    if tokens:
+        user_id = tokens.get("user_id") or session_id
+        logger.info(f"Recovered session for user {user_id!r} from token store")
+        _sessions[session_id] = user_id
+        return user_id
+
+    logger.warning("No valid session found in request (cookie present but no tokens)")
+    raise HTTPException(
+        status_code=401,
+        detail="No active session. Please connect your Spotify account.",
+    )
 
 
 def _get_user_access_token(user_id: str) -> str:
@@ -736,10 +754,12 @@ def auth_callback(
     }
     _save_tokens(user_id, token_data)
     
-    # Create session for this user
-    session_id = secrets.token_urlsafe(32)
+    # Create session for this user.
+    # We use the Spotify user_id as the stable session identifier so that
+    # sessions survive process restarts as long as tokens are present on disk.
+    session_id = user_id
     _sessions[session_id] = user_id
-    logger.info(f"Created session for user: {user_id}")
+    logger.info(f"Created session for user: {user_id} (session_id={session_id!r})")
 
     # Return success page with session cookie
     html = """
